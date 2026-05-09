@@ -7,7 +7,6 @@ import pandas as pd
 import time
 import re
 from pdf2image import convert_from_path
-# 🌟 로컬이 아닌 외부 API 주소로 접속하기 위해 Client 모듈을 추가로 불러옵니다.
 from ollama import Client 
 
 from cas_db import LEGAL_CAS_DB 
@@ -55,7 +54,6 @@ def get_pdf_content(file_path):
     elif s_m: isolated = full_text[s_m.start():s_m.start()+2000]
     return isolated, extracted_tables
 
-# 🌟 외부 API URL을 매개변수로 받도록 수정
 def extract_info_with_ai(prompt_content, target_model, api_url, is_image=False, image_paths=None):
     system_prompt = """당신은 데이터 추출 전문가입니다. MSDS Section 3에서 성분명, CAS번호, 함유량(%)을 추출하세요.
     - CAS는 [숫자-숫자-숫자] 형태입니다. 없으면 "미상"으로 적으세요.
@@ -68,7 +66,6 @@ def extract_info_with_ai(prompt_content, target_model, api_url, is_image=False, 
         messages.append({'role': 'user', 'content': prompt_content})
         
     try:
-        # 🌟 로컬 호스트가 아닌 사용자가 입력한 API 서버(Ngrok)로 연결!
         client = Client(host=api_url)
         response = client.chat(model=target_model, messages=messages)
         raw_output = response['message']['content']
@@ -121,10 +118,10 @@ def extract_full_text_for_rag(file_obj):
 # ==========================================
 st.title("🛡️ AI 산업안전보건 전문가 시스템")
 
-# 🌟 사이드바: Ngrok API 주소 입력창 추가
+# 사이드바: Ngrok API 주소 입력창
 st.sidebar.markdown("### 🔌 AI 서버 연결 설정")
 api_url = st.sidebar.text_input("Ollama API 주소 (Ngrok URL)", value="http://localhost:11434")
-st.sidebar.caption("※ 배포 환경에서는 Ngrok이 생성한 주소를 입력하세요. (예: https://abc.ngrok-free.app)")
+st.sidebar.caption("※ 배포 환경에서는 Ngrok 주소를 입력하세요.")
 st.sidebar.markdown("---")
 
 uploaded_files = st.sidebar.file_uploader("📂 MSDS PDF 업로드", type=["pdf"], accept_multiple_files=True)
@@ -160,12 +157,13 @@ with tab1:
                 iso_text, raw_tables = get_pdf_content(tmp_path)
                 ext_json, metrics, track = [], {}, ""
                 
+                # 추출 시도
                 if p_type == "TEXT_BASED":
                     target = "gemma4:e2b"
                     if raw_tables:
                         track = f"Track A ({target})"
                         prompt = "### MSDS DATA\n" + "\n".join(["| " + " | ".join(r) + " |" for r in raw_tables])
-                        ext_json, metrics = extract_info_with_ai(prompt, target, api_url=api_url) # 🌟 API URL 전달
+                        ext_json, metrics = extract_info_with_ai(prompt, target, api_url=api_url)
                     if not ext_json and len(iso_text) > 50:
                         track = f"Track A-2 ({target})"
                         ext_json, metrics = extract_info_with_ai(f"### TEXT\n{iso_text}", target, api_url=api_url)
@@ -181,25 +179,50 @@ with tab1:
                     ext_json, metrics = extract_info_with_ai(None, target, api_url=api_url, is_image=True, image_paths=img_paths)
                     for p in img_paths: os.remove(p)
 
+                # 결과 판별 (이성체 강제 매칭 포함)
                 if ext_json:
                     for item in ext_json:
                         cas, name, pct = str(item.get("cas", "")).strip(), str(item.get("name", "")), str(item.get("pct", "0"))
                         mi, ma = get_min_max_content(pct)
+                        clean_name = name.replace(" ", "")
+                        
                         if len(name) < 2 and cas == "미상": continue
                         
-                        we, sh, reas = "X", "X", "대상 아님"
+                        we_mark, sh_mark, reason = "X", "X", "DB 미등록 (또는 CAS 미상)"
+                        matched_db_info = None
+                        match_type = ""
+                        
+                        # 1. CAS 매칭
                         if cas in LEGAL_CAS_DB:
-                            db = LEGAL_CAS_DB[cas]
-                            if ma >= db["threshold"]:
-                                we, sh, reas = db["WE"], db["SH"], f"법적 기준({format_val(db['threshold'])}%) 이상"
+                            matched_db_info = LEGAL_CAS_DB[cas]
+                            match_type = "DB 대조"
+                        # 2. 이성질체 키워드 강제 매칭
+                        elif "자일렌" in clean_name or "크실렌" in clean_name or "Xylene" in name:
+                            matched_db_info = {"WE": "O", "SH": "O", "threshold": 1.0}
+                            match_type = "키워드 매칭(자일렌)"
+                        elif "크레졸" in clean_name or "Cresol" in name:
+                            matched_db_info = {"WE": "O", "SH": "O", "threshold": 1.0}
+                            match_type = "키워드 매칭(크레졸)"
+
+                        # 판정
+                        if matched_db_info:
+                            threshold = matched_db_info["threshold"]
+                            if ma >= threshold:
+                                we_mark, sh_mark = matched_db_info["WE"], matched_db_info["SH"]
+                                reason = f"{match_type}: 기준({format_val(threshold)}%) 이상"
+                            else:
+                                reason = f"{match_type}: 기준({format_val(threshold)}%) 미달"
                         
                         temp_results.append({
                             "제품명": uploaded_file.name.replace(".pdf", ""), "물질명": name, "CAS번호": cas,
                             "최소(%)": format_val(mi), "최대(%)": format_val(ma),
-                            "작업측정": we, "특수진단": sh, "모델": track, "사유": reas
+                            "작업측정": we_mark, "특수진단": sh_mark, "모델": track, "사유": reason
                         })
+                        
                     f_time = time.time() - f_start
                     st.caption(f"✅ {uploaded_file.name} 완료: {f_time:.1f}s | {metrics.get('tokens',0)}t | {metrics.get('tok_s',0.0)}t/s")
+                else:
+                    st.error(f"❌ '{uploaded_file.name}' 추출 실패.")
                 
                 os.remove(tmp_path)
                 progress_bar.progress((idx + 1) / total_files)
@@ -239,7 +262,6 @@ with tab2:
                     else:
                         prompt = f"MSDS 전문가로서 다음 원문을 바탕으로 답하세요.\n[원문]\n{txt[:8000]}\n[질문]\n{query}"
                         try:
-                            # 🌟 챗봇도 외부 API로 연결되게 수정
                             client = Client(host=api_url)
                             res = client.chat(model='gemma4:e2b', messages=[{'role': 'user', 'content': prompt}])
                             ans = res['message']['content']
