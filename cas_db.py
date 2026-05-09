@@ -241,7 +241,7 @@ LEGAL_CAS_DB = {
     "12001-26-2": {"name": "운모", "WE": "O", "SH": "O", "threshold": 1.0},
     "65997-15-1": {"name": "포틀랜드 시멘트", "WE": "O", "SH": "O", "threshold": 1.0},
     "7782-42-5": {"name": "흑연", "WE": "O", "SH": "O", "threshold": 1.0},
-    "1332-21-4": {"name": "석면 분진", "WE": "O", "SH": "O", "threshold": 1.0}
+    "1332-21-4": {"name": "석면 분진", "WE": "O", "SH": "O", "threshold": 1.0},
 
 # 🌟 자일렌 (Xylene) 이성질체 그룹
     "1330-20-7": {"WE": "O", "SH": "O", "threshold": 1.0}, # 자일렌 (혼합물)
