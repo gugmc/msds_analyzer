@@ -6,6 +6,7 @@ import json
 import pandas as pd
 import time
 import re
+from datetime import datetime # 🌟 시간 기록을 위한 모듈 추가
 from pdf2image import convert_from_path
 from ollama import Client 
 
@@ -14,14 +15,31 @@ from cas_db import LEGAL_CAS_DB
 st.set_page_config(page_title="MSDS AI 하이브리드 솔루션", layout="wide")
 
 # ==========================================
+# 0. 저장소 폴더 생성 로직
+# ==========================================
+STORAGE_DIR = "storage"
+PDF_STORAGE = os.path.join(STORAGE_DIR, "pdfs")
+HISTORY_STORAGE = os.path.join(STORAGE_DIR, "history")
+
+os.makedirs(PDF_STORAGE, exist_ok=True)
+os.makedirs(HISTORY_STORAGE, exist_ok=True)
+
+# ==========================================
 # 1. 초기화 및 세션 상태 관리
 # ==========================================
 if "all_results" not in st.session_state: st.session_state.all_results = None
 if "messages" not in st.session_state: st.session_state.messages = []
 
 # ==========================================
-# 2. 백엔드 로직
+# 2. 백엔드 및 저장 로직
 # ==========================================
+def save_file_locally(uploaded_file):
+    """업로드된 PDF를 로컬 저장소에 저장합니다."""
+    file_path = os.path.join(PDF_STORAGE, uploaded_file.name)
+    with open(file_path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
+    return file_path
+
 def check_pdf_type_stream(file_obj):
     text_content = ""
     try:
@@ -129,7 +147,7 @@ uploaded_files = st.sidebar.file_uploader("📂 MSDS PDF 업로드", type=["pdf"
 tab1, tab2 = st.tabs(["📊 대상물질 자동 판별", "💬 MSDS 대화형 챗봇 (RAG)"])
 
 # ------------------------------------------
-# [Tab 1] 자동 판별기
+# [Tab 1] 자동 판별기 (저장 기능 추가)
 # ------------------------------------------
 with tab1:
     if uploaded_files:
@@ -149,15 +167,16 @@ with tab1:
                 f_start = time.time()
                 status_text.info(f"🔄 {uploaded_file.name} 처리 중...")
                 
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                    tmp.write(uploaded_file.getvalue())
-                    tmp_path = tmp.name
+                # 🌟 원본 파일을 로컬 저장소에 저장
+                saved_pdf_path = save_file_locally(uploaded_file)
+                
+                # 분석을 위한 임시 경로 사용
+                tmp_path = saved_pdf_path 
 
                 p_type = check_pdf_type_stream(uploaded_file)
                 iso_text, raw_tables = get_pdf_content(tmp_path)
                 ext_json, metrics, track = [], {}, ""
                 
-                # 추출 시도
                 if p_type == "TEXT_BASED":
                     target = "gemma4:e2b"
                     if raw_tables:
@@ -179,7 +198,6 @@ with tab1:
                     ext_json, metrics = extract_info_with_ai(None, target, api_url=api_url, is_image=True, image_paths=img_paths)
                     for p in img_paths: os.remove(p)
 
-                # 결과 판별 (이성체 강제 매칭 포함)
                 if ext_json:
                     for item in ext_json:
                         cas, name, pct = str(item.get("cas", "")).strip(), str(item.get("name", "")), str(item.get("pct", "0"))
@@ -188,15 +206,13 @@ with tab1:
                         
                         if len(name) < 2 and cas == "미상": continue
                         
-                        we_mark, sh_mark, reason = "X", "X", "DB 미등록 (또는 CAS 미상)"
+                        we_mark, sh_mark, reason = "X", "X", "DB 미등록"
                         matched_db_info = None
                         match_type = ""
                         
-                        # 1. CAS 매칭
                         if cas in LEGAL_CAS_DB:
                             matched_db_info = LEGAL_CAS_DB[cas]
                             match_type = "DB 대조"
-                        # 2. 이성질체 키워드 강제 매칭
                         elif "자일렌" in clean_name or "크실렌" in clean_name or "Xylene" in name:
                             matched_db_info = {"WE": "O", "SH": "O", "threshold": 1.0}
                             match_type = "키워드 매칭(자일렌)"
@@ -204,7 +220,6 @@ with tab1:
                             matched_db_info = {"WE": "O", "SH": "O", "threshold": 1.0}
                             match_type = "키워드 매칭(크레졸)"
 
-                        # 판정
                         if matched_db_info:
                             threshold = matched_db_info["threshold"]
                             if ma >= threshold:
@@ -214,28 +229,39 @@ with tab1:
                                 reason = f"{match_type}: 기준({format_val(threshold)}%) 미달"
                         
                         temp_results.append({
-                            "제품명": uploaded_file.name.replace(".pdf", ""), "물질명": name, "CAS번호": cas,
+                            "분석일시": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "제품명": uploaded_file.name.replace(".pdf", ""), 
+                            "물질명": name, "CAS번호": cas,
                             "최소(%)": format_val(mi), "최대(%)": format_val(ma),
                             "작업측정": we_mark, "특수진단": sh_mark, "모델": track, "사유": reason
                         })
                         
                     f_time = time.time() - f_start
-                    st.caption(f"✅ {uploaded_file.name} 완료: {f_time:.1f}s | {metrics.get('tokens',0)}t | {metrics.get('tok_s',0.0)}t/s")
+                    st.caption(f"✅ {uploaded_file.name} 분석 완료")
                 else:
                     st.error(f"❌ '{uploaded_file.name}' 추출 실패.")
                 
-                os.remove(tmp_path)
                 progress_bar.progress((idx + 1) / total_files)
             
+            # 🌟 결과 세션 스테이트 저장 및 CSV 로직 저장
             st.session_state.all_results = temp_results
-            status_text.success(f"🎉 분석 완료 (총 {time.time()-start_time:.1f}초)")
+            
+            # 🌟 히스토리 폴더에 CSV 파일로 자동 저장
+            if temp_results:
+                history_df = pd.DataFrame(temp_results)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                history_filename = f"result_{timestamp}.csv"
+                history_df.to_csv(os.path.join(HISTORY_STORAGE, history_filename), index=False, encoding='utf-8-sig')
+                st.success(f"🎉 모든 분석 완료 및 로직 저장됨 (파일명: {history_filename})")
 
         if st.session_state.all_results:
             st.subheader("📊 통합 판별 결과")
             df = pd.DataFrame(st.session_state.all_results)
-            st.dataframe(df.style.map(color_ox, subset=['작업측정', '특수진단']), use_container_width=True, hide_index=True)
+            # 결과표에서는 '분석일시'를 빼고 깔끔하게 보여줌
+            display_df = df.drop(columns=["분석일시"]) if "분석일시" in df.columns else df
+            st.dataframe(display_df.style.map(color_ox, subset=['작업측정', '특수진단']), use_container_width=True, hide_index=True)
             csv = df.to_csv(index=False).encode('utf-8-sig')
-            st.download_button("📥 Excel 다운로드", csv, "MSDS_분석결과.csv", "text/csv")
+            st.download_button("📥 결과 CSV 다운로드", csv, "MSDS_분석결과.csv", "text/csv")
     else:
         st.info("👈 파일을 업로드해 주세요.")
 
