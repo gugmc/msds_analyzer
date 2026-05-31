@@ -276,7 +276,7 @@ with tab1:
 
             # 🌟 1. 디스코드 실시간 알림 전송 로직
             if temp_results:
-                with st.spinner('디스코드 알림을 전송하는 중...'):
+                with st.spinner('Processing...'):
                     send_to_discord(temp_results)
             
             # 🌟 2. 히스토리 폴더에 CSV 파일 자동 저장
