@@ -329,3 +329,40 @@ with tab2:
                 st.session_state.messages.append({"role": "assistant", "content": ans})
     else:
         st.info("👈 파일을 업로드해 주세요.")
+
+
+# ------------------------------------------
+# [Tab 3] 전체 누적 데이터 대시보드 (관리자용)
+# ------------------------------------------
+with tab3:
+    st.markdown("### 📚 서버에 누적된 전체 분석 기록")
+    st.caption("지금까지 서버에 저장된 모든 분석 결과를 한눈에 확인하고 통합 다운로드할 수 있습니다.")
+    
+    if os.path.exists(HISTORY_STORAGE):
+        history_files = [f for f in os.listdir(HISTORY_STORAGE) if f.endswith('.csv')]
+        
+        if history_files:
+            all_data = []
+            for file_name in history_files:
+                file_path = os.path.join(HISTORY_STORAGE, file_name)
+                df = pd.read_csv(file_path)
+                all_data.append(df)
+            
+            # 모든 CSV 파일을 하나로 합치기
+            if all_data:
+                merged_df = pd.concat(all_data, ignore_index=True)
+                
+                # 최신 분석이 위로 오도록 정렬 (분석일시 기준)
+                if "분석일시" in merged_df.columns:
+                    merged_df = merged_df.sort_values(by="분석일시", ascending=False)
+                
+                # 화면에 꽉 차게 예쁜 표로 출력
+                st.dataframe(merged_df, use_container_width=True, hide_index=True)
+                
+                # 합쳐진 전체 데이터를 한 번에 다운로드하는 버튼
+                csv = merged_df.to_csv(index=False).encode('utf-8-sig')
+                st.download_button("📥 통합 데이터 엑셀 다운로드", csv, "MSDS_전체누적데이터.csv", "text/csv")
+        else:
+            st.info("아직 저장된 분석 기록이 없습니다.")
+    else:
+        st.info("저장소 폴더가 존재하지 않습니다.")
