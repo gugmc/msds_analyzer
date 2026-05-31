@@ -332,37 +332,49 @@ with tab2:
 
 
 # ------------------------------------------
-# [Tab 3] 전체 누적 데이터 대시보드 (관리자용)
+# [Tab 3] 전체 누적 데이터 대시보드 (🔒 관리자 전용 잠금 추가)
 # ------------------------------------------
 with tab3:
-    st.markdown("### 📚 서버에 누적된 전체 분석 기록")
-    st.caption("지금까지 서버에 저장된 모든 분석 결과를 한눈에 확인하고 통합 다운로드할 수 있습니다.")
+    st.markdown("### 🔒 관리자 데이터 인증")
     
-    if os.path.exists(HISTORY_STORAGE):
-        history_files = [f for f in os.listdir(HISTORY_STORAGE) if f.endswith('.csv')]
+    # 🌟 여기에 연구자님이 사용할 비밀번호를 적어두세요! (기본값: admin1234)
+    ADMIN_PASSWORD = "admin1234" 
+    
+    # 비밀번호 입력창 (type="password"로 설정하면 글자가 ●●●로 가려집니다)
+    input_password = st.text_input("보안 비밀번호를 입력하세요", type="password", key="admin_tab_pwd")
+    
+    if input_password == ADMIN_PASSWORD:
+        st.success("🔓 인증에 성공했습니다. 누적 데이터를 표시합니다.")
+        st.markdown("---")
+        st.markdown("### 📚 서버에 누적된 전체 분석 기록")
         
-        if history_files:
-            all_data = []
-            for file_name in history_files:
-                file_path = os.path.join(HISTORY_STORAGE, file_name)
-                df = pd.read_csv(file_path)
-                all_data.append(df)
+        if os.path.exists(HISTORY_STORAGE):
+            history_files = [f for f in os.listdir(HISTORY_STORAGE) if f.endswith('.csv')]
             
-            # 모든 CSV 파일을 하나로 합치기
-            if all_data:
-                merged_df = pd.concat(all_data, ignore_index=True)
+            if history_files:
+                all_data = []
+                for file_name in history_files:
+                    file_path = os.path.join(HISTORY_STORAGE, file_name)
+                    df = pd.read_csv(file_path)
+                    all_data.append(df)
                 
-                # 최신 분석이 위로 오도록 정렬 (분석일시 기준)
-                if "분석일시" in merged_df.columns:
-                    merged_df = merged_df.sort_values(by="분석일시", ascending=False)
-                
-                # 화면에 꽉 차게 예쁜 표로 출력
-                st.dataframe(merged_df, use_container_width=True, hide_index=True)
-                
-                # 합쳐진 전체 데이터를 한 번에 다운로드하는 버튼
-                csv = merged_df.to_csv(index=False).encode('utf-8-sig')
-                st.download_button("📥 통합 데이터 엑셀 다운로드", csv, "MSDS_전체누적데이터.csv", "text/csv")
+                if all_data:
+                    merged_df = pd.concat(all_data, ignore_index=True)
+                    if "분석일시" in merged_df.columns:
+                        merged_df = merged_df.sort_values(by="분석일시", ascending=False)
+                    
+                    st.dataframe(merged_df, use_container_width=True, hide_index=True)
+                    
+                    csv = merged_df.to_csv(index=False).encode('utf-8-sig')
+                    st.download_button("📥 통합 데이터 엑셀 다운로드", csv, "MSDS_전체누적데이터.csv", "text/csv")
+            else:
+                st.info("아직 저장된 분석 기록이 없습니다.")
         else:
-            st.info("아직 저장된 분석 기록이 없습니다.")
+            st.info("저장소 폴더가 존재하지 않습니다.")
+            
+    elif input_password:
+        # 비밀번호를 틀렸을 때만 에러 메시지 출력
+        st.error("❌ 비밀번호가 일치하지 않습니다. 접근 권한이 없습니다.")
     else:
-        st.info("저장소 폴더가 존재하지 않습니다.")
+        # 아무것도 입력하지 않았을 때 나오는 기본 안내문
+        st.info("🔑 이 공간은 외부 사용자에게 노출되지 않는 보안 구역입니다. 누적 기록을 보시려면 비밀번호를 입력해 주세요.")
