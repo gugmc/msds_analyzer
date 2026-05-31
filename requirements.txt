@@ -3,3 +3,5 @@ pdfplumber
 pdf2image
 pandas
 ollama
+requests
+reportlab
