@@ -344,7 +344,7 @@ with tab3:
     input_password = st.text_input("보안 비밀번호를 입력하세요", type="password", key="admin_tab_pwd")
     
     if input_password == ADMIN_PASSWORD:
-        st.success("🔓 인증에 성공했습니다. 누적 데이터를 표시합니다.")
+        st.success("🔓 인증에 성공했습니다. 관리자페이지를 표시합니다.")
         st.markdown("---")
         st.markdown("### 📚 서버에 누적된 전체 분석 기록")
         
@@ -378,3 +378,27 @@ with tab3:
     else:
         # 아무것도 입력하지 않았을 때 나오는 기본 안내문
         st.info("🔑 이 공간은 외부 사용자에게 노출되지 않는 보안 구역입니다. 누적 기록을 보시려면 비밀번호를 입력해 주세요.")
+
+
+
+# 🌟 [신규 기능] 사이드바에 서버 저장소 관리 기능 구현 (🔒 탭3 비밀번호와 연동)
+st.sidebar.markdown("### 💾 관리자 페이지")
+# 사용자가 탭3에서 입력한 비밀번호가 맞았을 때만 사이드바 다운로드 창을 보여줍니다.
+if "admin_tab_pwd" in st.session_state and st.session_state["admin_tab_pwd"] == "admin1234":
+    if os.path.exists(PDF_STORAGE):
+        pdf_files = sorted(os.listdir(PDF_STORAGE))
+        if pdf_files:
+            selected_pdf = st.sidebar.selectbox("과거 업로드된 PDF 선택", pdf_files)
+            pdf_path = os.path.join(PDF_STORAGE, selected_pdf)
+            with open(pdf_path, "rb") as f:
+                st.sidebar.download_button(
+                    label="📥 선택한 원본 PDF 다운로드",
+                    data=f,
+                    file_name=selected_pdf,
+                    mime="application/pdf"
+                )
+        else:
+            st.sidebar.caption("저장된 PDF 파일이 없습니다.")
+else:
+    st.sidebar.caption("🔒 관리자 인증 시 활성화됩니다.")
+st.sidebar.markdown("---")
