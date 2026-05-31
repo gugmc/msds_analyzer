@@ -9,11 +9,12 @@ import re
 import zipfile
 from io import BytesIO
 from datetime import datetime 
+import pytz # 🌟 서울 시간대 설정을 위한 라이브러리 추가
 from pdf2image import convert_from_path
 from ollama import Client 
 import requests 
 
-# 🌟 PDF 요약 리포트 생성을 위한 reportlab 라이브러리 추가
+# PDF 요약 리포트 생성을 위한 reportlab 라이브러리
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
@@ -25,7 +26,7 @@ from cas_db import LEGAL_CAS_DB
 st.set_page_config(page_title="MSDS AI 하이브리드 솔루션", layout="wide")
 
 # ==========================================
-# 0. 저장소 폴더 생성 로직
+# 0. 저장소 폴더 생성 및 시간대 로직
 # ==========================================
 STORAGE_DIR = "storage"
 PDF_STORAGE = os.path.join(STORAGE_DIR, "pdfs")
@@ -35,6 +36,11 @@ FONT_STORAGE = os.path.join(STORAGE_DIR, "fonts")
 os.makedirs(PDF_STORAGE, exist_ok=True)
 os.makedirs(HISTORY_STORAGE, exist_ok=True)
 os.makedirs(FONT_STORAGE, exist_ok=True)
+
+# 🌟 모든 기록을 '아시아/서울' 시간대로 통일하는 함수
+def get_seoul_time(format_str="%Y-%m-%d %H:%M:%S"):
+    seoul_tz = pytz.timezone("Asia/Seoul")
+    return datetime.now(seoul_tz).strftime(format_str)
 
 # ==========================================
 # 1. 초기화 및 세션 상태 관리
@@ -93,28 +99,25 @@ def generate_pdf_report(item):
     p.setLineWidth(1.5)
     p.line(50, height - 100, width - 50, height - 100)
 
-    # 3. 문서 정보 표 헤더 스타일 메타데이터 정보
+    # 3. 문서 정보 표 헤더 스타일 메타데이터 정보 (서울 시간대 반영)
     p.setFont(font_name, 10)
     p.setFillColor(colors.HexColor("#7F8C8D"))
-    p.drawString(50, height - 125, f"발행일시: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    p.drawRightString(width - 50, height - 125, "문서번호: SAN-AI-2026-" + datetime.now().strftime('%m%d%H%M'))
+    p.drawString(50, height - 125, f"발행일시: {get_seoul_time()}")
+    p.drawRightString(width - 50, height - 125, "문서번호: GIL-MSDS-" + get_seoul_time("%m%d%H%M"))
 
     # 4. 상세 내용 배치 (라벨 - 데이터 테이블 형태 구현)
     y_pos = height - 160
     
     def draw_row(label, val, y):
-        # 배경 상자
         p.setFillColor(colors.HexColor("#F8F9FA"))
         p.rect(50, y - 10, 120, 30, fill=True, stroke=False)
         p.setFillColor(colors.HexColor("#FFFFFF"))
         p.rect(170, y - 10, width - 220, 30, fill=True, stroke=False)
         
-        # 외곽선
         p.setStrokeColor(colors.HexColor("#E2E8F0"))
         p.setLineWidth(1)
         p.rect(50, y - 10, width - 100, 30, fill=False, stroke=True)
         
-        # 텍스트
         p.setFont(font_name, 11)
         p.setFillColor(colors.HexColor("#34495E"))
         p.drawString(65, y + 2, label)
@@ -123,13 +126,14 @@ def generate_pdf_report(item):
         p.setFillColor(colors.HexColor("#2C3E50"))
         p.drawString(185, y + 2, str(val))
 
+    # 🌟 용어 수정: 작업측정 -> 작업환경 / 특수진단 -> 특수검진
     rows = [
         ("제 품 명", item.get("제품명", "-")),
         ("물 질 명", item.get("물질명", "-")),
         ("CAS 번호", item.get("CAS번호", "-")),
         ("함 유 량", f"{item.get('최소(%)', '0')}% ~ {item.get('최대(%)', '0')}%"),
-        ("작업환경측정 대상", "대상물질 (O)" if item.get("작업측정") == "O" else "미대상 (X)"),
-        ("특수건강진단 대상", "대상물질 (O)" if item.get("특수진단") == "O" else "미대상 (X)"),
+        ("작업환경 대상", "대상물질 (O)" if item.get("작업환경") == "O" else "미대상 (X)"),
+        ("특수검진 대상", "대상물질 (O)" if item.get("특수검진") == "O" else "미대상 (X)"),
         ("배정 AI 모델", item.get("모델", "-")),
     ]
 
@@ -137,29 +141,33 @@ def generate_pdf_report(item):
         draw_row(label, val, y_pos)
         y_pos -= 35
 
-    # 사유 란은 내용이 길 수 있으므로 별도 큰 상자로 처리
+    # 🌟 법적 규제 사유 상자 조절 및 가운데 맞춤(높낮이) 정렬 구현
     y_pos -= 15
+    box_height = 70
     p.setFillColor(colors.HexColor("#F8F9FA"))
-    p.rect(50, y_pos - 50, 120, 70, fill=True, stroke=True)
+    p.rect(50, y_pos - 50, 120, box_height, fill=True, stroke=True)
     p.setFillColor(colors.HexColor("#FFFFFF"))
-    p.rect(170, y_pos - 50, width - 220, 70, fill=True, stroke=True)
+    p.rect(170, y_pos - 50, width - 220, box_height, fill=True, stroke=True)
     
+    # 좌측 라벨 텍스트 높낮이 가운데 정렬
     p.setFont(font_name, 11)
     p.setFillColor(colors.HexColor("#34495E"))
-    p.drawString(65, y_pos + 10, "법적 규제 사유")
+    p.drawString(65, y_pos - 15 + (box_height / 2) - 5, "법적 규제 사유")
     
-    # 텍스트 줄바꿈 방어 로직 (간이 Wrap)
+    # 우측 텍스트 내용 길이 검토 및 높낮이 정렬
     reason_text = item.get("사유", "-")
     p.setFont(font_name, 10)
     p.setFillColor(colors.HexColor("#C0392B" if "이상" in reason_text else "#27AE60"))
     
     if len(reason_text) > 40:
-        p.drawString(185, y_pos + 15, reason_text[:40])
-        p.drawString(185, y_pos - 2, reason_text[40:])
+        # 두 줄 출력일 때 상하 대칭 배치 계산
+        p.drawString(185, y_pos + 5, reason_text[:40])
+        p.drawString(185, y_pos - 12, reason_text[40:])
     else:
-        p.drawString(185, y_pos + 10, reason_text)
+        # 한 줄 출력일 때 상자 안에서 수직 완벽 정렬
+        p.drawString(185, y_pos - 15 + (box_height / 2) - 5, reason_text)
 
-    # 5. 하단 법적 공인 문구 및 직인 란
+    # 5. 하단 법적 공인 문구 및 책임자 명기 (도장 없이)
     y_pos -= 120
     p.setFont(font_name, 12)
     p.setFillColor(colors.HexColor("#2C3E50"))
@@ -168,17 +176,8 @@ def generate_pdf_report(item):
 
     y_pos -= 80
     p.setFont(font_name, 14)
-    p.drawCentredString(width / 2, y_pos, "AI 산업안전보건 검증 시스템 연구 책임자 (인)")
-    
-    # 가상 직인 도장 그리기
-    p.setStrokeColor(colors.HexColor("#E74C3C"))
-    p.setLineWidth(1.5)
-    p.setFillColor(colors.transparent)
-    p.circle(width / 2 + 130, y_pos + 3, 18, stroke=True, fill=False)
-    p.setFont(font_name, 8)
-    p.setFillColor(colors.HexColor("#E74C3C"))
-    p.drawCentredString(width / 2 + 130, y_pos, "안전")
-    p.drawCentredString(width / 2 + 130, y_pos - 8, "검증")
+    # 🌟 문구 수정 및 요청하신 대로 빨간 도장 그리기 소스 삭제
+    p.drawCentredString(width / 2, y_pos, "가천대길병원 작업환경측정실 책임자")
 
     p.save()
     buffer.seek(0)
@@ -192,7 +191,7 @@ def save_file_locally(file_name, file_bytes):
     return file_path
 
 def send_to_discord(results_list):
-    # 👇 여기에 디스코드에서 발급받은 '웹훅 URL'을 복사해서 붙여넣으세요!
+    # 👇 여기에 디스코드 웹훅 URL을 붙여넣으세요!
     WEBHOOK_URL = "https://discord.com/api/webhooks/여기에_복사한_웹훅_주소를_넣으세요" 
     
     if not WEBHOOK_URL or "여기에_복사한_웹훅_주소를_넣으세요" in WEBHOOK_URL:
@@ -200,12 +199,15 @@ def send_to_discord(results_list):
 
     try:
         for item in results_list:
+            # 🌟 알림 문구 용어 동기화 수정
             msg = f"🔔 **새로운 MSDS 분석 완료!**\n" \
                   f"**📄 문서명:** {item['제품명']}\n" \
-                  f"**🧪 물질명:** {item['물질명']} (CAS: {item['CAS번호']})\n"                   f"**⚖️ 함유량:** {item['최소(%)']} ~ {item['최대(%)']}%\n" \
-                  f"**🔍 판정결과:** 작업환경측정({item['작업측정']}) / 특수건강진단({item['특수진단']})\n" \
+                  f"**🧪 물질명:** {item['물질명']} (CAS: {item['CAS번호']})\n" \
+                  f"**⚖️ 함유량:** {item['최소(%)']} ~ {item['최대(%)']}%\n" \
+                  f"**🔍 판정결과:** 작업환경({item['작업환경']}) / 특수검진({item['특수검진']})\n" \
                   f"**📝 사유:** {item['사유']}\n" \
-                  f"**⏱️ 분석일시:** {item['분석일시']}\n"                   f"----------------------------------------"
+                  f"**⏱️ 분석일시(서울):** {item['분석일시']}\n" \
+                  f"----------------------------------------"
             requests.post(WEBHOOK_URL, json={"content": msg})
         return True
     except Exception as e:
@@ -293,23 +295,20 @@ def extract_full_text_for_rag(file_obj):
             for page in pdf.pages:
                 t = page.extract_text()
                 if t: full_text += t + "\n"
-                    
     except: full_text = "텍스트 추출 불가 스캔본"
     file_obj.seek(0)
     return full_text
 
 # ==========================================
-# 3. Streamlit UI
+# 3. Streamlit UI 영역
 # ==========================================
 st.title("🛡️ AI 산업안전보건 전문가 시스템")
 
-# 사이드바 설정
 st.sidebar.markdown("### 🔌 AI 서버 연결 설정")
 api_url = st.sidebar.text_input("Ollama API 주소 (Ngrok URL)", value="http://localhost:11434")
 st.sidebar.caption("※ 배포 환경에서는 Ngrok 주소를 입력하세요.")
 st.sidebar.markdown("---")
 
-# 사이드바에 서버 저장소 관리 기능 구현
 st.sidebar.markdown("### 💾 서버 저장소 관리")
 if "admin_tab_pwd" in st.session_state and st.session_state["admin_tab_pwd"] == "admin1234":
     if os.path.exists(PDF_STORAGE):
@@ -330,19 +329,17 @@ else:
     st.sidebar.caption("🔒 관리자 인증 시 활성화됩니다.")
 st.sidebar.markdown("---")
 
-# 🌟 짚(ZIP) 파일과 PDF 다중 업로드를 수용하도록 확장
 uploaded_files = st.sidebar.file_uploader("📂 MSDS PDF 또는 ZIP 파일 업로드", type=["pdf", "zip"], accept_multiple_files=True)
 
-tab1, tab2, tab3 = st.tabs(["📊 대상물질 자동 판별", "💬 MSDS 대화형 챗봇 (RAG)", "📁 전체 누적 데이터 보기"])
+# 🌟 탭 이름 변경: 전체 누적 데이터 보기 -> 관리자 전용
+tab1, tab2, tab3 = st.tabs(["📊 대상물질 자동 판별", "💬 MSDS 대화형 챗봇 (RAG)", "📁 관리자 전용"])
 
 # ------------------------------------------
-# [Tab 1] 자동 판별기 (ZIP 해제 및 일괄 대량 처리 구현)
+# [Tab 1] 자동 판별기 (배치 대량 처리)
 # ------------------------------------------
 with tab1:
     if uploaded_files:
-        # 업로드 큐 빌드 (ZIP 파일 내부 탐색 포함)
         analysis_queue = []
-        
         for f in uploaded_files:
             if f.name.endswith(".zip"):
                 with zipfile.ZipFile(f) as z:
@@ -362,10 +359,8 @@ with tab1:
                     "source": "개별 PDF 업로드"
                 })
 
-        # 미리보기 정보 출력
         preview_data = []
         for item in analysis_queue:
-            # 텍스트 스캔본 여부를 바이트 스트림 형태로 간이 체크
             bio = BytesIO(item["bytes"])
             p_type = check_pdf_type_stream(bio)
             preview_data.append({
@@ -388,7 +383,6 @@ with tab1:
                 f_start = time.time()
                 status_text.info(f"🔄 [{idx+1}/{total_files}] '{item['name']}' 배치 분석 진행 중...")
                 
-                # 원본 바이트 파일 디스크에 실시간 백업 저장
                 saved_pdf_path = save_file_locally(item["name"], item["bytes"])
                 tmp_path = saved_pdf_path 
 
@@ -451,12 +445,13 @@ with tab1:
                             else:
                                 reason = f"{match_type}: 기준({format_val(threshold)}%) 미달"
                         
+                        # 🌟 표 내부 컬럼명을 '작업환경', '특수검진'으로 바인딩 수정
                         temp_results.append({
-                            "분석일시": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "분석일시": get_seoul_time(), # 🌟 서울 시간 기록 적용
                             "제품명": item["name"].replace(".pdf", ""), 
                             "물질명": name, "CAS번호": cas,
                             "최소(%)": format_val(mi), "최대(%)": format_val(ma),
-                            "작업측정": we_mark, "특수진단": sh_mark, "모델": track, "사유": reason
+                            "작업환경": we_mark, "특수검진": sh_mark, "모델": track, "사유": reason
                         })
                 else:
                     st.error(f"❌ '{item['name']}' 정밀 성분 추출 실패.")
@@ -465,18 +460,16 @@ with tab1:
             
             st.session_state.all_results = temp_results
 
-            # 1. 디스코드 실시간 배치 알림 전송 로직
             if temp_results:
                 with st.spinner('디스코드 통제실로 분석 현황 전송 중...'):
                     send_to_discord(temp_results)
             
-            # 2. 히스토리 폴더에 CSV 파일 통합 자동 저장
             if temp_results:
                 history_df = pd.DataFrame(temp_results)
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                timestamp = get_seoul_time("%Y%m%d_%H%M%S") # 🌟 서울 시간 기준 파일 생성
                 history_filename = f"batch_result_{timestamp}.csv"
                 history_df.to_csv(os.path.join(HISTORY_STORAGE, history_filename), index=False, encoding='utf-8-sig')
-                st.success(f"🎉 모든 대량 배치 분석 완료 및 저장 완료! (파일명: {history_filename})")
+                st.success(f"🎉 모든 대량 배치 분석 완료! (파일명: {history_filename})")
                 time.sleep(0.5)
                 st.rerun()
 
@@ -484,18 +477,17 @@ with tab1:
             st.subheader("📊 배치 처리 통합 분석 결과")
             df = pd.DataFrame(st.session_state.all_results)
             display_df = df.drop(columns=["분석일시"]) if "분석일시" in df.columns else df
-            st.dataframe(display_df.style.map(color_ox, subset=['작업측정', '특수진단']), use_container_width=True, hide_index=True)
             
-            # 엑셀 통합본 다운로드
+            # 🌟 표 마킹 수정: 작업측정->작업환경, 특수진단->특수검진 컬럼에 맞춤 스타일 적용
+            st.dataframe(display_df.style.map(color_ox, subset=['작업환경', '특수검진']), use_container_width=True, hide_index=True)
+            
             csv = df.to_csv(index=False).encode('utf-8-sig')
             st.download_button("📥 통합 분석 결과 Excel(.CSV) 다운로드", csv, "MSDS_통합배치결과.csv", "text/csv")
             
-            # 🌟 [신규 기능 4] 한 줄 결과물에서 원하는 개별 유해물질 요약 리포트(A4 PDF) 출력 섹션 구현
             st.markdown("---")
             st.subheader("📄 개별 안전보건 요약 리포트 생성 (PDF)")
-            st.caption("확인서 출력을 원하시는 특정 화학물질 성분을 선택하면 1장짜리 깔끔한 정식 PDF 서류 보고서가 발행됩니다.")
+            st.caption("확인서 출력을 원하시는 특정 화학물질 성분을 선택하면 가천대길병원 맞춤 정식 서류 보고서가 발행됩니다.")
             
-            # 셀렉트박스 가독성을 위한 포맷 매핑
             item_options = []
             for i, r in enumerate(st.session_state.all_results):
                 item_options.append(f"[{i+1}] {r['제품명']} - {r['물질명']} (CAS: {r['CAS번호']})")
@@ -520,7 +512,6 @@ with tab1:
 # ------------------------------------------
 with tab2:
     if uploaded_files:
-        # 챗봇용 타겟 문서 정리 (ZIP 및 개별 파일 병합 대응)
         document_names = []
         for f in uploaded_files:
             if f.name.endswith(".zip"):
@@ -534,7 +525,6 @@ with tab2:
         if document_names:
             sel_file = st.selectbox("질문할 문서 선택", document_names)
             
-            # 실시간 가상 파일 오브젝트 로딩 모방
             for m in st.session_state.messages:
                 with st.chat_message(m["role"]): st.markdown(m["content"])
                     
@@ -544,7 +534,6 @@ with tab2:
                     
                 with st.chat_message("assistant"):
                     with st.spinner("전문 검토 의견 작성 중..."):
-                        # RAG 파일 가상 텍스트 탐색 (물리 경로 연계)
                         file_path = os.path.join(PDF_STORAGE, sel_file)
                         if os.path.exists(file_path):
                             with open(file_path, "rb") as f:
@@ -553,7 +542,7 @@ with tab2:
                             txt = "서버 백업 데이터 활용"
                             
                         if "텍스트 추출 불가" in txt:
-                            ans = "해당 문서는 스캔본 이미지 기반이므로 RAG 텍스트 챗봇 기반 답변 생성이 제한됩니다. 자동 판별기 탭의 AI 추출 데이터를 참고해 주세요."
+                            ans = "해당 문서는 스캔본 이미지 기반이므로 RAG 텍스트 답변이 제한됩니다."
                         else:
                             prompt = f"MSDS 전문가로서 다음 원문을 바탕으로 안전보건법적 관점에서 명확하게 답하세요.\n[원문]\n{txt[:8000]}\n[질문]\n{query}"
                             try:
@@ -569,7 +558,7 @@ with tab2:
         st.info("👈 파일을 업로드해 주세요.")
 
 # ------------------------------------------
-# [Tab 3] 전체 누적 데이터 대시보드 (🔒 관리자 전용 잠금)
+# [Tab 3] 관리자 전용 대시보드 (🔒 잠금 설정)
 # ------------------------------------------
 with tab3:
     st.markdown("### 🔒 관리자 통합 통제 대시보드")
@@ -580,7 +569,7 @@ with tab3:
     if input_password == ADMIN_PASSWORD:
         st.success("🔓 중앙 관리자 인증에 성공했습니다.")
         st.markdown("---")
-        st.markdown("### 📚 전사 누적 분석 빅데이터 기록")
+        st.markdown("### 📚 전사 누적 분석 빅데이터 기록 (서울 시간 기준)")
         
         if os.path.exists(HISTORY_STORAGE):
             history_files = [f for f in os.listdir(HISTORY_STORAGE) if f.endswith('.csv')]
