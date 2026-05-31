@@ -9,6 +9,7 @@ import re
 from datetime import datetime # 🌟 시간 기록을 위한 모듈 추가
 from pdf2image import convert_from_path
 from ollama import Client 
+import requests # 🌟 디스코드로 메시지를 보내기 위한 필수 라이브러리 추가
 
 from cas_db import LEGAL_CAS_DB 
 
@@ -39,6 +40,33 @@ def save_file_locally(uploaded_file):
     with open(file_path, "wb") as f:
         f.write(uploaded_file.getbuffer())
     return file_path
+
+# 🌟 디스코드 실시간 알림 전송 함수 추가
+def send_to_discord(results_list):
+    # 👇 여기에 디스코드에서 발급받은 '웹훅 URL'을 복사해서 붙여넣으세요!
+    WEBHOOK_URL = "https://discordapp.com/api/webhooks/1510658141178691765/0dmyjFWGMmPq-mI5bkYY5ffKQ_AYCGdSpPcPly0qYWnQw_RP1s2Gs6vmjyidf1ZO4_aU" 
+    
+    if not WEBHOOK_URL or "여기에_복사한_웹훅_주소를_넣으세요" in WEBHOOK_URL:
+        return False
+
+    try:
+        for item in results_list:
+            # 디스코드 채팅창에 예쁘게 보이도록 마크다운 포맷팅
+            msg = f"🔔 **새로운 MSDS 분석 완료!**\n" \
+                  f"**📄 문서명:** {item['제품명']}\n" \
+                  f"**🧪 물질명:** {item['물질명']} (CAS: {item['CAS번호']})\n" \
+                  f"**⚖️ 함유량:** {item['최소(%)']} ~ {item['최대(%)']}%\n" \
+                  f"**🔍 판정결과:** 작업환경측정({item['작업측정']}) / 특수건강진단({item['특수진단']})\n" \
+                  f"**📝 사유:** {item['사유']}\n" \
+                  f"**⏱️ 분석일시:** {item['분석일시']}\n" \
+                  f"----------------------------------------"
+            
+            # 디스코드로 전송
+            requests.post(WEBHOOK_URL, json={"content": msg})
+        return True
+    except Exception as e:
+        st.error(f"🚨 디스코드 알림 전송 실패: {e}")
+        return False
 
 def check_pdf_type_stream(file_obj):
     text_content = ""
@@ -243,10 +271,15 @@ with tab1:
                 
                 progress_bar.progress((idx + 1) / total_files)
             
-            # 🌟 결과 세션 스테이트 저장 및 CSV 로직 저장
+            # 🌟 결과 세션 스테이트 저장
             st.session_state.all_results = temp_results
+
+            # 🌟 1. 디스코드 실시간 알림 전송 로직
+            if temp_results:
+                with st.spinner('디스코드 알림을 전송하는 중...'):
+                    send_to_discord(temp_results)
             
-            # 🌟 히스토리 폴더에 CSV 파일로 자동 저장
+            # 🌟 2. 히스토리 폴더에 CSV 파일 자동 저장
             if temp_results:
                 history_df = pd.DataFrame(temp_results)
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
