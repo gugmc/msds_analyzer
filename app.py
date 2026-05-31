@@ -172,7 +172,7 @@ st.sidebar.markdown("---")
 
 uploaded_files = st.sidebar.file_uploader("📂 MSDS PDF 업로드", type=["pdf"], accept_multiple_files=True)
 
-tab1, tab2 = st.tabs(["📊 대상물질 자동 판별", "💬 MSDS 대화형 챗봇 (RAG)"])
+tab1, tab2, tab3 = st.tabs(["📊 대상물질 자동 판별", "💬 MSDS 대화형 챗봇 (RAG)", "📁 전체 누적 데이터 보기"])
 
 # ------------------------------------------
 # [Tab 1] 자동 판별기 (저장 기능 추가)
