@@ -228,7 +228,7 @@ def get_pdf_content(file_path):
     with pdfplumber.open(file_path) as pdf:
         for page in pdf.pages[:4]:
             t = page.extract_text()
-if t: full_text += t + "\n"
+            if t: full_text += t + "\n"
             tables = page.extract_tables()
             for table in tables:
                 for row in table:
