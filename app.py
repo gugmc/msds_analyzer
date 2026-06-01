@@ -64,7 +64,6 @@ def download_korean_font():
             return None
     return font_path
 
-# 🌟 수정: 동시 분석 시 문서번호 중복 방지를 위해 count 변수 추가 수용
 def generate_pdf_report(item, count=1):
     """선택된 유해물질 항목에 대해 깔끔한 A4 1장짜리 검토 결과 확인서 PDF를 생성합니다."""
     font_path = download_korean_font()
@@ -99,7 +98,7 @@ def generate_pdf_report(item, count=1):
     p.setLineWidth(1.5)
     p.line(50, height - 100, width - 50, height - 100)
 
-    # 3. 문서 정보 표 헤더 스타일 메타데이터 정보 (🌟 뒤에 고유 번호 순번 접미사 -01, -02 추가)
+    # 3. 문서 정보 표 헤더 스타일 메타데이터 정보 (뒤에 고유 번호 순번 접미사 -01, -02 추가)
     p.setFont(font_name, 10)
     p.setFillColor(colors.HexColor("#7F8C8D"))
     p.drawString(50, height - 125, f"발행일시: {get_seoul_time()}")
@@ -162,14 +161,14 @@ def generate_pdf_report(item, count=1):
     else:
         p.drawString(185, y_pos - 19, reason_text)
 
-    # 5. 하단 법적 공인 문구 및 책임자 명기 (🌟 담당자 성명 및 서명란 신설)
+    # 5. 하단 법적 공인 문구 및 책임자 명기
     y_pos -= 120
     p.setFont(font_name, 12)
     p.setFillColor(colors.HexColor("#2C3E50"))
     p.drawCentredString(width / 2, y_pos, "본 확인서는 산업안전보건법 및 화학물질관리법 등 관련 규정에 의거하여")
     p.drawCentredString(width / 2, y_pos - 20, "AI 하이브리드 전문가 검증 시스템을 통해 판별 및 검토되었음을 확인합니다.")
 
-    # 🌟 [신규 기능] 담당자 작성 및 서명 영역 배치
+    # 담당자 작성 및 서명 영역 배치
     y_pos -= 65
     p.setFont(font_name, 11)
     p.setFillColor(colors.HexColor("#34495E"))
@@ -344,8 +343,14 @@ with tab1:
                 with zipfile.ZipFile(f) as z:
                     for name in z.namelist():
                         if name.lower().endswith(".pdf") and not name.startswith("__MACOSX"):
+                            # 한글 파일명 인코딩 복원 마법 로직
+                            try:
+                                decoded_name = name.encode('cp437').decode('cp949')
+                            except UnicodeEncodeError:
+                                decoded_name = name
+
                             pdf_bytes = z.read(name)
-                            clean_filename = os.path.basename(name)
+                            clean_filename = os.path.basename(decoded_name)
                             analysis_queue.append({
                                 "name": clean_filename,
                                 "bytes": pdf_bytes,
@@ -494,7 +499,7 @@ with tab1:
                 selected_idx = int(selected_option.split("]")[0].replace("[", "")) - 1
                 target_item = st.session_state.all_results[selected_idx]
                 
-                # 🌟 수정: 일괄 출력 대상에 매칭되는 index 번호 순번을 count 인자로 전달하여 고유 문서 번호 꼬리표 결합
+                # 일괄 출력 대상에 매칭되는 index 번호 순번을 count 인자로 전달하여 고유 문서 번호 꼬리표 결합
                 pdf_data = generate_pdf_report(target_item, count=selected_idx + 1)
                 st.download_button(
                     label=f"📥 {target_item['물질명']} 요약 리포트(PDF) 다운로드",
@@ -516,7 +521,12 @@ with tab2:
                 with zipfile.ZipFile(f) as z:
                     for name in z.namelist():
                         if name.lower().endswith(".pdf") and not name.startswith("__MACOSX"):
-                            document_names.append(os.path.basename(name))
+                            # 한글 파일명 인코딩 복원 마법 로직
+                            try:
+                                decoded_name = name.encode('cp437').decode('cp949')
+                            except UnicodeEncodeError:
+                                decoded_name = name
+                            document_names.append(os.path.basename(decoded_name))
             else:
                 document_names.append(f.name)
                 
