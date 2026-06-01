@@ -36,38 +36,38 @@ STORAGE_DIR = "storage"
 PDF_STORAGE = os.path.join(STORAGE_DIR, "pdfs")
 HISTORY_STORAGE = os.path.join(STORAGE_DIR, "history")
 FONT_STORAGE = os.path.join(STORAGE_DIR, "fonts")
-# 🌟 [신규] 사용자 지정 규칙 DB 파일 경로
 CUSTOM_DB_PATH = os.path.join(STORAGE_DIR, "custom_cas_db.json")
+
+# 🌟 [신규] 노출기준 비고 DB 파일 경로
+EXPOSURE_DB_PATH = os.path.join(STORAGE_DIR, "exposure_db.json")
 
 os.makedirs(PDF_STORAGE, exist_ok=True)
 os.makedirs(HISTORY_STORAGE, exist_ok=True)
 os.makedirs(FONT_STORAGE, exist_ok=True)
 
-# 예외 사전 DB 파일이 없으면 빈 껍데기 생성
 if not os.path.exists(CUSTOM_DB_PATH):
-    with open(CUSTOM_DB_PATH, "w", encoding="utf-8") as f:
-        json.dump({}, f)
+    with open(CUSTOM_DB_PATH, "w", encoding="utf-8") as f: json.dump({}, f)
+if not os.path.exists(EXPOSURE_DB_PATH):
+    with open(EXPOSURE_DB_PATH, "w", encoding="utf-8") as f: json.dump({}, f)
 
 def load_custom_db():
-    with open(CUSTOM_DB_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
+    with open(CUSTOM_DB_PATH, "r", encoding="utf-8") as f: return json.load(f)
 
 def save_custom_db(data):
-    with open(CUSTOM_DB_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
+    with open(CUSTOM_DB_PATH, "w", encoding="utf-8") as f: json.dump(data, f, ensure_ascii=False, indent=4)
+
+def load_exposure_db():
+    with open(EXPOSURE_DB_PATH, "r", encoding="utf-8") as f: return json.load(f)
 
 def get_seoul_time(format_str="%Y-%m-%d %H:%M:%S"):
     seoul_tz = pytz.timezone("Asia/Seoul")
     return datetime.now(seoul_tz).strftime(format_str)
 
 def decode_zip_filename(name):
-    try:
-        decoded = name.encode('cp437').decode('cp949')
+    try: decoded = name.encode('cp437').decode('cp949')
     except:
-        try:
-            decoded = name.encode('cp437').decode('utf-8')
-        except:
-            decoded = name
+        try: decoded = name.encode('cp437').decode('utf-8')
+        except: decoded = name
     return unicodedata.normalize('NFC', decoded)
 
 # ==========================================
@@ -88,10 +88,8 @@ def download_korean_font():
         try:
             res = requests.get(font_url)
             res.raise_for_status()
-            with open(font_path, "wb") as f:
-                f.write(res.content)
-        except Exception as e:
-            return None
+            with open(font_path, "wb") as f: f.write(res.content)
+        except Exception as e: return None
     return font_path
 
 def generate_pdf_report(item, count=1):
@@ -147,14 +145,15 @@ def generate_pdf_report(item, count=1):
     max_v = item.get('최대(%)', '0')
     pct_display = f"{min_v}%" if min_v == max_v else f"{min_v}% ~ {max_v}%"
 
+    # 🌟 [개선] 노출기준 비고를 7번째 줄에 추가
     rows = [
-        ("제 품 명", item.get("제품명", "-")),
-        ("물 질 명", item.get("물질명", "-")),
+        ("제 품 명", item.get("제품명", "-")[:30]),
+        ("물 질 명", item.get("물질명", "-")[:30]),
         ("CAS 번호", item.get("CAS번호", "-")),
         ("함 유 량", pct_display),
         ("작업환경 대상", "대상물질 (O)" if item.get("작업환경") == "O" else "미대상 (X)"),
         ("특수검진 대상", "대상물질 (O)" if item.get("특수검진") == "O" else "미대상 (X)"),
-        ("배정 AI 모델", item.get("모델", "-")),
+        ("노출기준 비고", item.get("노출기준비고", "-")[:35]),
     ]
 
     for label, val in rows:
@@ -216,8 +215,7 @@ def generate_pdf_report(item, count=1):
 
 def save_file_locally(file_name, file_bytes):
     file_path = os.path.join(PDF_STORAGE, file_name)
-    with open(file_path, "wb") as f:
-        f.write(file_bytes)
+    with open(file_path, "wb") as f: f.write(file_bytes)
     return file_path
 
 def send_to_discord(results_list, webhook_url):
@@ -226,19 +224,20 @@ def send_to_discord(results_list, webhook_url):
         for item in results_list:
             mi, ma = item.get('최소(%)', '0'), item.get('최대(%)', '0')
             pct_display = f"{mi}%" if mi == ma else f"{mi}% ~ {ma}%"
+            # 🌟 [개선] 디스코드 메시지에도 노출기준 비고 포함
             msg = f"""🔔 **새로운 MSDS 분석 완료!**
 **📄 문서명:** {item['제품명']}
 **🧪 물질명:** {item['물질명']} (CAS: {item['CAS번호']})
 **⚖️ 함유량:** {pct_display}
 **🔍 판정결과:** 작업환경({item['작업환경']}) / 특수검진({item['특수검진']})
 **📝 사유:** {item['사유']}
+**🔖 비고:** {item.get('노출기준비고', '-')}
 **⏱️ 분석일시:** {item['분석일시']}
 ----------------------------------------"""
             requests.post(webhook_url, json={"content": msg})
         return True
     except: return False
 
-# 🌟 [신규] 사용자 피드백 디스코드 전송 함수
 def send_feedback_to_discord(feedback_text, webhook_url):
     if not webhook_url: return False
     msg = f"""📩 **[새로운 사용자 피드백 접수]**
@@ -278,10 +277,8 @@ def get_pdf_content(file_path):
     s_m, e_m = sec3_p.search(full_text.replace(" ", "")), sec4_p.search(full_text.replace(" ", ""))
     
     isolated = ""
-    if s_m and e_m and s_m.start() < e_m.start(): 
-        isolated = full_text[s_m.start():e_m.start()]
-    elif s_m: 
-        isolated = full_text[s_m.start():s_m.start()+2000]
+    if s_m and e_m and s_m.start() < e_m.start(): isolated = full_text[s_m.start():e_m.start()]
+    elif s_m: isolated = full_text[s_m.start():s_m.start()+2000]
     return isolated, extracted_tables
 
 def extract_info_with_ai(prompt_content, target_model, api_url, is_image=False, image_paths=None):
@@ -365,7 +362,6 @@ else:
 
 uploaded_files = st.sidebar.file_uploader("📂 MSDS PDF 또는 ZIP 파일 업로드", type=["pdf", "zip"], accept_multiple_files=True)
 
-# 🌟 [신규] 문의 피드백 탭 추가 -> 총 5개 탭
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 분석 자동 판별", "📄 리포트 출력", "💬 MSDS 챗봇", "📁 관리자 전용", "📬 문의 및 피드백"])
 
 # ------------------------------------------
@@ -399,8 +395,8 @@ with tab1:
             total_files = len(analysis_queue)
             status_text, progress_bar = st.empty(), st.progress(0)
             
-            # 🌟 [개선] 사용자 예외 사전(Custom DB) 로드
             custom_db = load_custom_db()
+            exposure_db = load_exposure_db() # 🌟 노출기준 DB 로드
             
             for idx, item in enumerate(analysis_queue):
                 status_text.info(f"🔄 [{idx+1}/{total_files}] '{item['name']}' 배치 분석 진행 중...")
@@ -440,8 +436,7 @@ with tab1:
                         mi, ma = get_min_max_content(pct)
                         clean_name = name.replace(" ", "")
                         
-                        # 🌟 [핵심 보완] CAS 번호 하이픈 누락 복원 로직 (예: 71432 -> 71-43-2)
-                        cas_clean = re.sub(r'[^\d\-]', '', cas) # 숫자와 하이픈만 남김
+                        cas_clean = re.sub(r'[^\d\-]', '', cas)
                         if cas_clean and '-' not in cas_clean and len(cas_clean) >= 4:
                             cas = f"{cas_clean[:-3]}-{cas_clean[-3:-1]}-{cas_clean[-1]}"
                         else:
@@ -454,15 +449,12 @@ with tab1:
                         matched_db_info = None
                         match_type = ""
                         
-                        # 🌟 [개선] 1순위: 사용자 예외 사전(Custom DB) 확인
                         if cas in custom_db:
                             matched_db_info = custom_db[cas]
                             match_type = "사내 예외 규칙"
-                        # 2순위: 법정 DB 확인
                         elif cas in LEGAL_CAS_DB:
                             matched_db_info = LEGAL_CAS_DB[cas]
                             match_type = "법정 DB 대조"
-                        # 3순위: 키워드 예외
                         elif "자일렌" in clean_name or "크실렌" in clean_name or "Xylene" in name:
                             matched_db_info = {"WE": "O", "SH": "O", "threshold": 1.0}
                             match_type = "키워드 매칭(자일렌)"
@@ -477,6 +469,9 @@ with tab1:
                                 reason = f"{match_type}: 기준({format_val(threshold)}%) 이상"
                             else:
                                 reason = f"{match_type}: 기준({format_val(threshold)}%) 미달"
+                                
+                        # 🌟 [신규] 노출기준 비고 추출
+                        exposure_remark = exposure_db.get(cas, "-")
                         
                         temp_results.append({
                             "분석일시": get_seoul_time(), 
@@ -484,7 +479,8 @@ with tab1:
                             "물질명": unicodedata.normalize('NFC', name),
                             "CAS번호": cas,
                             "최소(%)": format_val(mi), "최대(%)": format_val(ma),
-                            "작업환경": we_mark, "특수검진": sh_mark, "모델": track, "사유": reason
+                            "작업환경": we_mark, "특수검진": sh_mark, "모델": track, "사유": reason,
+                            "노출기준비고": exposure_remark # 🌟 비고 저장
                         })
                 else:
                     st.error(f"❌ '{item['name']}' 정밀 성분 추출 실패.")
@@ -588,7 +584,7 @@ with tab3:
     else: st.info("👈 파일을 업로드해 주세요.")
 
 # ------------------------------------------
-# [Tab 4] 관리자 전용 대시보드 (사용자 규칙 추가 포함)
+# [Tab 4] 관리자 전용 대시보드
 # ------------------------------------------
 with tab4:
     st.markdown("### 🔒 관리자 통합 통제 대시보드")
@@ -598,10 +594,50 @@ with tab4:
         st.success("🔓 중앙 관리자 인증에 성공했습니다. (왼쪽 사이드바 메뉴 활성화됨)")
         st.markdown("---")
         
-        # 🌟 [신규] 사용자 지정 규칙 관리 (Coal Tar Pitch 등 예외 등록)
+        # 🌟 [신규] 노출기준(비고) DB 자동 추출 파트 🌟
+        st.markdown("### 🗂️ 법정 노출기준 DB 업데이트 (CSV/Excel)")
+        st.caption("고용노동부 '화학물질 및 물리적 인자의 노출기준' 파일을 업로드하면 비고란의 [CAS번호] 특이사항을 추출해 DB화합니다.")
+        exposure_file = st.file_uploader("노출기준 파일 업로드", type=["csv", "xlsx"])
+        
+        if st.button("DB 업데이트 실행") and exposure_file:
+            with st.spinner("파일을 분석하여 DB를 구축하는 중입니다..."):
+                try:
+                    if exposure_file.name.endswith(".csv"):
+                        try: df = pd.read_csv(exposure_file, header=None, encoding='utf-8')
+                        except UnicodeDecodeError: 
+                            exposure_file.seek(0)
+                            df = pd.read_csv(exposure_file, header=None, encoding='cp949')
+                    else: df = pd.read_excel(exposure_file, header=None)
+
+                    new_exposure_db = {}
+                    for _, row in df.iterrows():
+                        for cell in row:
+                            cell_str = str(cell).strip()
+                            # [CAS] 정규식 스캔
+                            m = re.search(r'\[(\d+-\d+-\d+)\](.*)', cell_str)
+                            if m:
+                                cas_no = m.group(1).strip()
+                                new_exposure_db[cas_no] = cell_str 
+                    
+                    with open(EXPOSURE_DB_PATH, "w", encoding="utf-8") as f:
+                        json.dump(new_exposure_db, f, ensure_ascii=False, indent=4)
+                    st.success(f"🎉 성공적으로 {len(new_exposure_db)}개의 노출기준 특이사항(비고)이 DB에 저장되었습니다!")
+                    time.sleep(1)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"DB 업데이트 실패: {e}")
+                    
+        exposure_db = load_exposure_db()
+        if exposure_db:
+            with st.expander(f"👀 현재 등록된 노출기준 비고 목록 보기 (총 {len(exposure_db)}건)"):
+                exp_df = pd.DataFrame.from_dict(exposure_db, orient="index").reset_index()
+                exp_df.columns = ["CAS 번호", "노출기준 비고 내용"]
+                st.dataframe(exp_df.head(100), use_container_width=True, hide_index=True)
+                st.caption("※ 너무 많아 상위 100개만 표시합니다.")
+
+        st.markdown("---")
         st.markdown("### ⚙️ 사용자 예외 규칙 관리 (Custom DB)")
         st.caption("Coal Tar Pitch 처럼 법정 DB에 없지만 특별 관리해야 할 예외 CAS 번호를 등록하면 AI가 최우선으로 적용합니다.")
-        
         custom_db = load_custom_db()
         with st.form("add_custom_rule"):
             col1, col2, col3, col4 = st.columns(4)
@@ -617,16 +653,14 @@ with tab4:
                     st.success(f"✅ [{new_cas}] 규칙이 성공적으로 등록되었습니다!")
                     time.sleep(1)
                     st.rerun()
-                else:
-                    st.error("CAS 번호를 입력해주세요.")
+                else: st.error("CAS 번호를 입력해주세요.")
                     
         if custom_db:
             st.markdown("**현재 등록된 예외 규칙 목록**")
             cdb_df = pd.DataFrame.from_dict(custom_db, orient="index").reset_index()
             cdb_df.columns = ["CAS 번호", "작업환경(WE)", "특수검진(SH)", "기준함유량(%)"]
             st.dataframe(cdb_df, use_container_width=True, hide_index=True)
-        else:
-            st.info("아직 등록된 사내 예외 규칙이 없습니다.")
+        else: st.info("아직 등록된 사내 예외 규칙이 없습니다.")
 
         st.markdown("---")
         st.markdown("### 📚 전사 누적 분석 빅데이터 기록")
@@ -645,7 +679,7 @@ with tab4:
     else: st.info("🔑 과거 기록 열람 및 예외 DB 등록을 위해 관리자 암호를 입력해 주십시오.")
 
 # ------------------------------------------
-# [Tab 5] 🌟 신규: 사용자 피드백 문의 창구 🌟
+# [Tab 5] 📬 문의 및 피드백
 # ------------------------------------------
 with tab5:
     st.markdown("### 📬 시스템 문의 및 피드백")
@@ -661,7 +695,5 @@ with tab5:
             else:
                 with st.spinner("의견을 전송하는 중입니다..."):
                     success = send_feedback_to_discord(feedback_text, discord_webhook)
-                    if success:
-                        st.success("🎉 소중한 의견이 관리자 디스코드로 성공적으로 전송되었습니다! 감사합니다.")
-                    else:
-                        st.error("🚨 전송에 실패했습니다. 관리자 디스코드 웹훅 연결 상태를 확인해 주세요.")
+                    if success: st.success("🎉 소중한 의견이 관리자 디스코드로 성공적으로 전송되었습니다! 감사합니다.")
+                    else: st.error("🚨 전송에 실패했습니다. 관리자 디스코드 웹훅 연결 상태를 확인해 주세요.")
