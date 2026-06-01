@@ -141,7 +141,7 @@ def generate_pdf_report(item):
         draw_row(label, val, y_pos)
         y_pos -= 35
 
-    # 🌟 법적 규제 사유 상자 조절 및 가운데 맞춤(높낮이) 정렬 구현
+# 🌟 법적 규제 사유 상자 조절 및 가운데 맞춤(높낮이) 정렬 구현
     y_pos -= 15
     box_height = 70
     p.setFillColor(colors.HexColor("#F8F9FA"))
@@ -149,23 +149,23 @@ def generate_pdf_report(item):
     p.setFillColor(colors.HexColor("#FFFFFF"))
     p.rect(170, y_pos - 50, width - 220, box_height, fill=True, stroke=True)
     
-    # 좌측 라벨 텍스트 높낮이 가운데 정렬
+    # 좌측 라벨 텍스트 높낮이 완벽 정렬
     p.setFont(font_name, 11)
     p.setFillColor(colors.HexColor("#34495E"))
-    p.drawString(65, y_pos - 15 + (box_height / 2) - 5, "법적 규제 사유")
+    p.drawString(65, y_pos - 19, "법적 규제 사유")
     
-    # 우측 텍스트 내용 길이 검토 및 높낮이 정렬
+    # 우측 텍스트 내용 길이 검토 및 높낮이 완벽 정렬
     reason_text = item.get("사유", "-")
     p.setFont(font_name, 10)
     p.setFillColor(colors.HexColor("#C0392B" if "이상" in reason_text else "#27AE60"))
     
     if len(reason_text) > 40:
         # 두 줄 출력일 때 상하 대칭 배치 계산
-        p.drawString(185, y_pos + 5, reason_text[:40])
-        p.drawString(185, y_pos - 12, reason_text[40:])
+        p.drawString(185, y_pos - 10, reason_text[:40])
+        p.drawString(185, y_pos - 28, reason_text[40:])
     else:
-        # 한 줄 출력일 때 상자 안에서 수직 완벽 정렬
-        p.drawString(185, y_pos - 15 + (box_height / 2) - 5, reason_text)
+        # 한 줄 출력일 때 상자 안에서 수직 완벽 정렬 (y_pos - 19)
+        p.drawString(185, y_pos - 19, reason_text)
 
     # 5. 하단 법적 공인 문구 및 책임자 명기 (도장 없이)
     y_pos -= 120
