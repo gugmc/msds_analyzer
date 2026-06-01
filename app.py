@@ -30,18 +30,31 @@ st.set_page_config(page_title="MSDS AI 하이브리드 솔루션", layout="wide"
 # 0. 전역 설정 및 저장소 폴더 생성 
 # ==========================================
 ADMIN_PASSWORD = "admin1234" 
-
-# 🌟 [개선] 디스코드 웹훅 기본값 고정
 DEFAULT_DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1510658141178691765/0dmyjFWGMmPq-mI5bkYY5ffKQ_AYCGdSpPcPly0qYWnQw_RP1s2Gs6vmjyidf1ZO4_aU"
 
 STORAGE_DIR = "storage"
 PDF_STORAGE = os.path.join(STORAGE_DIR, "pdfs")
 HISTORY_STORAGE = os.path.join(STORAGE_DIR, "history")
 FONT_STORAGE = os.path.join(STORAGE_DIR, "fonts")
+# 🌟 [신규] 사용자 지정 규칙 DB 파일 경로
+CUSTOM_DB_PATH = os.path.join(STORAGE_DIR, "custom_cas_db.json")
 
 os.makedirs(PDF_STORAGE, exist_ok=True)
 os.makedirs(HISTORY_STORAGE, exist_ok=True)
 os.makedirs(FONT_STORAGE, exist_ok=True)
+
+# 예외 사전 DB 파일이 없으면 빈 껍데기 생성
+if not os.path.exists(CUSTOM_DB_PATH):
+    with open(CUSTOM_DB_PATH, "w", encoding="utf-8") as f:
+        json.dump({}, f)
+
+def load_custom_db():
+    with open(CUSTOM_DB_PATH, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def save_custom_db(data):
+    with open(CUSTOM_DB_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
 
 def get_seoul_time(format_str="%Y-%m-%d %H:%M:%S"):
     seoul_tz = pytz.timezone("Asia/Seoul")
@@ -62,7 +75,6 @@ def decode_zip_filename(name):
 # ==========================================
 if "all_results" not in st.session_state: st.session_state.all_results = None
 if "messages" not in st.session_state: st.session_state.messages = []
-# 🌟 세션 시작 시 기본 웹훅 주소로 자동 세팅
 if "discord_webhook_url" not in st.session_state: st.session_state.discord_webhook_url = DEFAULT_DISCORD_WEBHOOK
 
 # ==========================================
@@ -72,7 +84,6 @@ if "discord_webhook_url" not in st.session_state: st.session_state.discord_webho
 def download_korean_font():
     font_url = "https://raw.githubusercontent.com/google/fonts/main/ofl/nanumgothic/NanumGothic-Regular.ttf"
     font_path = os.path.join(FONT_STORAGE, "NanumGothic.ttf")
-    
     if not os.path.exists(font_path) or os.path.getsize(font_path) < 10000:
         try:
             res = requests.get(font_url)
@@ -86,13 +97,11 @@ def download_korean_font():
 def generate_pdf_report(item, count=1):
     font_path = download_korean_font()
     font_name = "Helvetica" 
-    
     if font_path:
         try:
             pdfmetrics.registerFont(TTFont('NanumGothic', font_path))
             font_name = 'NanumGothic'
-        except:
-            pass
+        except: pass
 
     buffer = BytesIO()
     p = canvas.Canvas(buffer, pagesize=A4)
@@ -108,7 +117,6 @@ def generate_pdf_report(item, count=1):
     p.setFont(font_name, 24)
     p.setFillColor(colors.HexColor("#2C3E50"))
     p.drawCentredString(width / 2, height - 80, "MSDS 검토 결과 확인서")
-    
     p.setStrokeColor(colors.HexColor("#2C3E50"))
     p.setLineWidth(1.5)
     p.line(50, height - 100, width - 50, height - 100)
@@ -125,15 +133,12 @@ def generate_pdf_report(item, count=1):
         p.rect(50, y - 10, 120, 30, fill=True, stroke=False)
         p.setFillColor(colors.HexColor("#FFFFFF"))
         p.rect(170, y - 10, width - 220, 30, fill=True, stroke=False)
-        
         p.setStrokeColor(colors.HexColor("#E2E8F0"))
         p.setLineWidth(1)
         p.rect(50, y - 10, width - 100, 30, fill=False, stroke=True)
-        
         p.setFont(font_name, 11)
         p.setFillColor(colors.HexColor("#34495E"))
         p.drawString(65, y + 2, label)
-        
         p.setFont(font_name, 11)
         p.setFillColor(colors.HexColor("#2C3E50"))
         p.drawString(185, y + 2, str(val))
@@ -198,7 +203,6 @@ def generate_pdf_report(item, count=1):
     p.rect(start_x, start_y, box_w, box_h)
     p.line(start_x + box_w/2, start_y, start_x + box_w/2, start_y + box_h)
     p.line(start_x, start_y + box_h - 20, start_x + box_w, start_y + box_h - 20)
-
     p.setFont(font_name, 10)
     p.drawCentredString(start_x + box_w/4, start_y + box_h - 14, "담 당")
     p.drawCentredString(start_x + box_w*3/4, start_y + box_h - 14, "책 임")
@@ -217,15 +221,11 @@ def save_file_locally(file_name, file_bytes):
     return file_path
 
 def send_to_discord(results_list, webhook_url):
-    if not webhook_url or "api/webhooks" not in webhook_url:
-        return False
-
+    if not webhook_url or "api/webhooks" not in webhook_url: return False
     try:
         for item in results_list:
-            mi = item.get('최소(%)', '0')
-            ma = item.get('최대(%)', '0')
+            mi, ma = item.get('최소(%)', '0'), item.get('최대(%)', '0')
             pct_display = f"{mi}%" if mi == ma else f"{mi}% ~ {ma}%"
-
             msg = f"""🔔 **새로운 MSDS 분석 완료!**
 **📄 문서명:** {item['제품명']}
 **🧪 물질명:** {item['물질명']} (CAS: {item['CAS번호']})
@@ -234,13 +234,21 @@ def send_to_discord(results_list, webhook_url):
 **📝 사유:** {item['사유']}
 **⏱️ 분석일시:** {item['분석일시']}
 ----------------------------------------"""
-            res = requests.post(webhook_url, json={"content": msg})
-            if res.status_code >= 400:
-                st.error(f"🚨 디스코드 서버 거부 (오류코드: {res.status_code})")
+            requests.post(webhook_url, json={"content": msg})
         return True
-    except Exception as e:
-        st.error(f"🚨 디스코드 통신 실패 원인: {e}")
-        return False
+    except: return False
+
+# 🌟 [신규] 사용자 피드백 디스코드 전송 함수
+def send_feedback_to_discord(feedback_text, webhook_url):
+    if not webhook_url: return False
+    msg = f"""📩 **[새로운 사용자 피드백 접수]**
+**⏱️ 접수일시:** {get_seoul_time()}
+**💬 문의 내용:** {feedback_text}
+----------------------------------------"""
+    try:
+        requests.post(webhook_url, json={"content": msg})
+        return True
+    except: return False
 
 def check_pdf_type_stream(file_obj):
     text_content = ""
@@ -278,7 +286,6 @@ def get_pdf_content(file_path):
 
 def extract_info_with_ai(prompt_content, target_model, api_url, is_image=False, image_paths=None):
     system_prompt = """당신은 데이터 추출 전문가입니다. MSDS Section 3에서 성분명, CAS번호, 함유량(%)을 추출하세요.
-    - CAS번호에 슬래시(/)나 다른 코드(예: KE번호)가 함께 적혀있다면 반드시 숫자-숫자-숫자 형태의 순수 CAS번호 위주로 추출해야 합니다.
     - 반드시 [{"name": "물질명", "cas": "CAS", "pct": "함유량"}] 형식의 JSON 배열로만 답하세요. 부연설명 금지."""
     
     messages = [{'role': 'system', 'content': system_prompt}]
@@ -291,7 +298,6 @@ def extract_info_with_ai(prompt_content, target_model, api_url, is_image=False, 
         client = Client(host=api_url, headers={"ngrok-skip-browser-warning": "true"})
         response = client.chat(model=target_model, messages=messages)
         raw_output = response['message']['content']
-        
         match = re.search(r'\[.*\]', raw_output, re.DOTALL)
         if match: return json.loads(match.group(0)), {}
         return [], {}
@@ -342,8 +348,6 @@ st.sidebar.markdown("---")
 discord_webhook = ""
 if "admin_tab_pwd" in st.session_state and st.session_state["admin_tab_pwd"] == ADMIN_PASSWORD:
     st.sidebar.markdown("### 🔔 시스템 관리 (관리자 전용)")
-    st.sidebar.caption("※ 일반 사용자는 이 메뉴를 볼 수 없습니다.")
-    # 🌟 입력칸의 기본값을 세션 상태에서 가져오되, 없으면 방금 설정한 기본 URL을 보여줌
     discord_webhook = st.sidebar.text_input("디스코드 웹훅 URL 설정", value=st.session_state.get("discord_webhook_url", DEFAULT_DISCORD_WEBHOOK), type="password", key="discord_webhook_url")
     st.sidebar.markdown("---")
     
@@ -354,22 +358,15 @@ if "admin_tab_pwd" in st.session_state and st.session_state["admin_tab_pwd"] == 
             selected_pdf = st.sidebar.selectbox("과거 업로드된 PDF 선택", pdf_files)
             pdf_path = os.path.join(PDF_STORAGE, selected_pdf)
             with open(pdf_path, "rb") as f:
-                st.sidebar.download_button(
-                    label="📥 선택한 원본 PDF 다운로드",
-                    data=f,
-                    file_name=selected_pdf,
-                    mime="application/pdf"
-                )
-        else:
-            st.sidebar.caption("저장된 PDF 파일이 없습니다.")
+                st.sidebar.download_button("📥 선택한 원본 PDF 다운로드", data=f, file_name=selected_pdf, mime="application/pdf")
     st.sidebar.markdown("---")
 else:
-    # 관리자가 아닌 경우 기본 고정된 웹훅 주소를 사용함
     discord_webhook = st.session_state.get("discord_webhook_url", DEFAULT_DISCORD_WEBHOOK)
 
 uploaded_files = st.sidebar.file_uploader("📂 MSDS PDF 또는 ZIP 파일 업로드", type=["pdf", "zip"], accept_multiple_files=True)
 
-tab1, tab2, tab3, tab4 = st.tabs(["📊 분석 자동 판별", "📄 리포트 출력 (PDF)", "💬 MSDS 챗봇", "📁 관리자 전용"])
+# 🌟 [신규] 문의 피드백 탭 추가 -> 총 5개 탭
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 분석 자동 판별", "📄 리포트 출력", "💬 MSDS 챗봇", "📁 관리자 전용", "📬 문의 및 피드백"])
 
 # ------------------------------------------
 # [Tab 1] 자동 판별기 
@@ -384,30 +381,15 @@ with tab1:
                         if name.lower().endswith(".pdf") and not name.startswith("__MACOSX"):
                             decoded_name = decode_zip_filename(name)
                             pdf_bytes = z.read(name)
-                            clean_filename = os.path.basename(decoded_name)
-                            analysis_queue.append({
-                                "name": clean_filename,
-                                "bytes": pdf_bytes,
-                                "source": f"ZIP: {f.name}"
-                            })
+                            analysis_queue.append({"name": os.path.basename(decoded_name), "bytes": pdf_bytes, "source": f"ZIP: {f.name}"})
             else:
-                clean_name = unicodedata.normalize('NFC', f.name)
-                analysis_queue.append({
-                    "name": clean_name,
-                    "bytes": f.getvalue(),
-                    "source": "개별 PDF 업로드"
-                })
+                analysis_queue.append({"name": unicodedata.normalize('NFC', f.name), "bytes": f.getvalue(), "source": "개별 PDF 업로드"})
 
         preview_data = []
         for item in analysis_queue:
             bio = BytesIO(item["bytes"])
             p_type = check_pdf_type_stream(bio)
-            preview_data.append({
-                "파일명": item["name"],
-                "출처": item["source"],
-                "문서 형태": "텍스트형" if p_type == "TEXT_BASED" else "스캔본",
-                "배정 모델": "gemma4:e2b" if p_type == "TEXT_BASED" else "gemma4:31b"
-            })
+            preview_data.append({"파일명": item["name"], "출처": item["source"], "문서 형태": "텍스트형" if p_type == "TEXT_BASED" else "스캔본", "배정 모델": "gemma4:e2b" if p_type == "TEXT_BASED" else "gemma4:31b"})
             
         st.markdown(f"📋 **분석 대기 중인 문서:** 총 `{len(analysis_queue)}` 건")
         st.table(pd.DataFrame(preview_data))
@@ -417,15 +399,16 @@ with tab1:
             total_files = len(analysis_queue)
             status_text, progress_bar = st.empty(), st.progress(0)
             
+            # 🌟 [개선] 사용자 예외 사전(Custom DB) 로드
+            custom_db = load_custom_db()
+            
             for idx, item in enumerate(analysis_queue):
                 status_text.info(f"🔄 [{idx+1}/{total_files}] '{item['name']}' 배치 분석 진행 중...")
                 
                 saved_pdf_path = save_file_locally(item["name"], item["bytes"])
-                tmp_path = saved_pdf_path 
-
                 bio = BytesIO(item["bytes"])
                 p_type = check_pdf_type_stream(bio)
-                iso_text, raw_tables = get_pdf_content(tmp_path)
+                iso_text, raw_tables = get_pdf_content(saved_pdf_path)
                 ext_json, track = [], ""
                 
                 if p_type == "TEXT_BASED":
@@ -442,15 +425,14 @@ with tab1:
                     target = "gemma4:31b"
                     track = f"Track B ({target})"
                     try:
-                        images = convert_from_path(tmp_path, first_page=1, last_page=3, dpi=200)
+                        images = convert_from_path(saved_pdf_path, first_page=1, last_page=3, dpi=200)
                         img_paths = []
                         for i, img in enumerate(images):
-                            p = tmp_path.replace(".pdf", f"_{i}.jpg")
+                            p = saved_pdf_path.replace(".pdf", f"_{i}.jpg")
                             img.save(p, 'JPEG'); img_paths.append(p)
                         ext_json, _ = extract_info_with_ai(None, target, api_url=api_url, is_image=True, image_paths=img_paths)
                         for p in img_paths: os.remove(p)
-                    except:
-                        pass
+                    except: pass
 
                 if ext_json:
                     for element in ext_json:
@@ -458,19 +440,29 @@ with tab1:
                         mi, ma = get_min_max_content(pct)
                         clean_name = name.replace(" ", "")
                         
-                        if len(name) < 2 and cas == "미상": continue
+                        # 🌟 [핵심 보완] CAS 번호 하이픈 누락 복원 로직 (예: 71432 -> 71-43-2)
+                        cas_clean = re.sub(r'[^\d\-]', '', cas) # 숫자와 하이픈만 남김
+                        if cas_clean and '-' not in cas_clean and len(cas_clean) >= 4:
+                            cas = f"{cas_clean[:-3]}-{cas_clean[-3:-1]}-{cas_clean[-1]}"
+                        else:
+                            cas_match = re.search(r'\d+-\d+-\d+', cas)
+                            if cas_match: cas = cas_match.group(0) 
                         
-                        cas_match = re.search(r'\d+-\d+-\d+', cas)
-                        if cas_match:
-                            cas = cas_match.group(0) 
+                        if len(name) < 2 and cas == "미상": continue
                         
                         we_mark, sh_mark, reason = "X", "X", "DB 미등록"
                         matched_db_info = None
                         match_type = ""
                         
-                        if cas in LEGAL_CAS_DB:
+                        # 🌟 [개선] 1순위: 사용자 예외 사전(Custom DB) 확인
+                        if cas in custom_db:
+                            matched_db_info = custom_db[cas]
+                            match_type = "사내 예외 규칙"
+                        # 2순위: 법정 DB 확인
+                        elif cas in LEGAL_CAS_DB:
                             matched_db_info = LEGAL_CAS_DB[cas]
-                            match_type = "DB 대조"
+                            match_type = "법정 DB 대조"
+                        # 3순위: 키워드 예외
                         elif "자일렌" in clean_name or "크실렌" in clean_name or "Xylene" in name:
                             matched_db_info = {"WE": "O", "SH": "O", "threshold": 1.0}
                             match_type = "키워드 매칭(자일렌)"
@@ -496,7 +488,6 @@ with tab1:
                         })
                 else:
                     st.error(f"❌ '{item['name']}' 정밀 성분 추출 실패.")
-                
                 progress_bar.progress((idx + 1) / total_files)
             
             st.session_state.all_results = temp_results
@@ -522,7 +513,7 @@ with tab1:
             
             csv = df.to_csv(index=False).encode('utf-8-sig')
             st.download_button("📥 전체 결과 Excel(.CSV)로 저장", csv, "MSDS_분석결과.csv", "text/csv")
-            st.info("💡 **PDF 확인서 출력은 위쪽의 [📄 리포트 출력 (PDF)] 탭을 클릭해 주세요!**")
+            st.info("💡 **PDF 확인서 출력은 위쪽의 [📄 리포트 출력] 탭을 클릭해 주세요!**")
     else:
         st.info("👈 왼쪽 사이드바에서 PDF 또는 ZIP 파일을 업로드해 주세요.")
 
@@ -531,53 +522,31 @@ with tab1:
 # ------------------------------------------
 with tab2:
     st.subheader("📄 안전보건 요약 리포트 (PDF) 출력 센터")
-    
     if st.session_state.all_results:
         st.markdown("분석된 유해화학물질의 개별 판정 결과를 **가천대길병원 공식 확인서 포맷**으로 출력합니다.")
-        
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("#### 📦 일괄 다운로드 (추천)")
-            st.caption("분석된 전체 화학물질 확인서를 하나의 ZIP 파일로 묶어서 받습니다.")
-            
             zip_buffer = BytesIO()
             with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
                 for idx, item in enumerate(st.session_state.all_results):
                     pdf_buffer = generate_pdf_report(item, count=idx+1)
                     safe_prod = item.get("제품명", f"미상_{idx}").replace("/", "_").replace("\\", "_")
                     safe_mat = item.get("물질명", "미상").replace("/", "_").replace("\\", "_")
-                    filename = f"확인서_{safe_prod}_{safe_mat}.pdf"
-                    zip_file.writestr(filename, pdf_buffer.getvalue())
-            
-            st.download_button(
-                label="📥 모든 확인서 한 번에 다운로드 (ZIP)",
-                data=zip_buffer.getvalue(),
-                file_name=f"MSDS_전체확인서_{get_seoul_time('%m%d%H%M')}.zip",
-                mime="application/zip",
-                type="primary"
-            )
+                    zip_file.writestr(f"확인서_{safe_prod}_{safe_mat}.pdf", pdf_buffer.getvalue())
+            st.download_button("📥 모든 확인서 한 번에 다운로드 (ZIP)", data=zip_buffer.getvalue(), file_name=f"MSDS_전체확인서_{get_seoul_time('%m%d%H%M')}.zip", mime="application/zip", type="primary")
             
         with col2:
             st.markdown("#### 📄 개별 선택 다운로드")
-            st.caption("목록에서 원하는 단일 물질만 선택하여 PDF로 다운로드합니다.")
-            item_options = []
-            for i, r in enumerate(st.session_state.all_results):
-                item_options.append(f"[{i+1}] {r['제품명']} - {r['물질명']} (CAS: {r['CAS번호']})")
-            
+            item_options = [f"[{i+1}] {r['제품명']} - {r['물질명']} (CAS: {r['CAS번호']})" for i, r in enumerate(st.session_state.all_results)]
             selected_option = st.selectbox("출력 대상 선택", item_options)
             if selected_option:
                 selected_idx = int(selected_option.split("]")[0].replace("[", "")) - 1
                 target_item = st.session_state.all_results[selected_idx]
-                
                 pdf_data = generate_pdf_report(target_item, count=selected_idx + 1)
-                st.download_button(
-                    label=f"📥 {target_item['물질명']} 확인서 다운로드",
-                    data=pdf_data,
-                    file_name=f"MSDS_확인서_{target_item['물질명']}.pdf",
-                    mime="application/pdf"
-                )
+                st.download_button(label=f"📥 {target_item['물질명']} 확인서 다운로드", data=pdf_data, file_name=f"MSDS_확인서_{target_item['물질명']}.pdf", mime="application/pdf")
     else:
-        st.info("👈 먼저 [📊 분석 자동 판별] 탭에서 파일을 분석해 주세요. 분석이 완료되어야 출력할 수 있습니다.")
+        st.info("👈 먼저 파일을 분석해 주세요.")
 
 # ------------------------------------------
 # [Tab 3] RAG 챗봇
@@ -590,84 +559,109 @@ with tab3:
                 with zipfile.ZipFile(f) as z:
                     for name in z.namelist():
                         if name.lower().endswith(".pdf") and not name.startswith("__MACOSX"):
-                            decoded_name = decode_zip_filename(name)
-                            document_names.append(os.path.basename(decoded_name))
-            else:
-                document_names.append(unicodedata.normalize('NFC', f.name))
+                            document_names.append(os.path.basename(decode_zip_filename(name)))
+            else: document_names.append(unicodedata.normalize('NFC', f.name))
                 
         if document_names:
             sel_file = st.selectbox("질문할 문서 선택", document_names)
-            
             for m in st.session_state.messages:
                 with st.chat_message(m["role"]): st.markdown(m["content"])
-                    
             if query := st.chat_input(f"'{sel_file}'에 대해 물어보세요."):
                 st.session_state.messages.append({"role": "user", "content": query})
                 with st.chat_message("user"): st.markdown(query)
-                    
                 with st.chat_message("assistant"):
                     with st.spinner("전문 검토 의견 작성 중..."):
                         file_path = os.path.join(PDF_STORAGE, sel_file)
                         if os.path.exists(file_path):
-                            with open(file_path, "rb") as f:
-                                txt = extract_full_text_for_rag(f)
+                            with open(file_path, "rb") as f: txt = extract_full_text_for_rag(f)
+                        else: txt = "서버 백업 데이터 활용"
+                        if "텍스트 추출 불가" in txt: ans = "해당 문서는 스캔본이므로 RAG 답변이 제한됩니다."
                         else:
-                            txt = "서버 백업 데이터 활용"
-                            
-                        if "텍스트 추출 불가" in txt:
-                            ans = "해당 문서는 스캔본 이미지 기반이므로 RAG 텍스트 답변이 제한됩니다."
-                        else:
-                            prompt = f"MSDS 전문가로서 다음 원문을 바탕으로 안전보건법적 관점에서 명확하게 답하세요.\n[원문]\n{txt[:8000]}\n[질문]\n{query}"
                             try:
                                 client = Client(host=api_url)
-                                res = client.chat(model='gemma4:e2b', messages=[{'role': 'user', 'content': prompt}])
+                                res = client.chat(model='gemma4:e2b', messages=[{'role': 'user', 'content': f"MSDS 전문가로서 원문을 바탕으로 명확하게 답하세요.\n[원문]\n{txt[:8000]}\n[질문]\n{query}"}])
                                 ans = res['message']['content']
-                            except Exception as e: ans = f"🚨 로컬 Ollama AI 서버 연결 실패: {e}"
+                            except Exception as e: ans = f"🚨 AI 서버 연결 실패: {e}"
                     st.markdown(ans)
                     st.session_state.messages.append({"role": "assistant", "content": ans})
-        else:
-            st.info("업로드된 유효한 PDF 문서가 없습니다.")
-    else:
-        st.info("👈 파일을 업로드해 주세요.")
+        else: st.info("유효한 PDF 문서가 없습니다.")
+    else: st.info("👈 파일을 업로드해 주세요.")
 
 # ------------------------------------------
-# [Tab 4] 관리자 전용 대시보드
+# [Tab 4] 관리자 전용 대시보드 (사용자 규칙 추가 포함)
 # ------------------------------------------
 with tab4:
     st.markdown("### 🔒 관리자 통합 통제 대시보드")
-    
     input_password = st.text_input("보안 자격증명 비밀번호 입력", type="password", key="admin_tab_pwd")
     
     if input_password == ADMIN_PASSWORD:
-        st.success("🔓 중앙 관리자 인증에 성공했습니다. (왼쪽 사이드바에 관리자 메뉴가 활성화되었습니다)")
+        st.success("🔓 중앙 관리자 인증에 성공했습니다. (왼쪽 사이드바 메뉴 활성화됨)")
         st.markdown("---")
-        st.markdown("### 📚 전사 누적 분석 빅데이터 기록 (서울 시간 기준)https://iguana-garter-ditch.ngrok-free.dev")
         
+        # 🌟 [신규] 사용자 지정 규칙 관리 (Coal Tar Pitch 등 예외 등록)
+        st.markdown("### ⚙️ 사용자 예외 규칙 관리 (Custom DB)")
+        st.caption("Coal Tar Pitch 처럼 법정 DB에 없지만 특별 관리해야 할 예외 CAS 번호를 등록하면 AI가 최우선으로 적용합니다.")
+        
+        custom_db = load_custom_db()
+        with st.form("add_custom_rule"):
+            col1, col2, col3, col4 = st.columns(4)
+            with col1: new_cas = st.text_input("CAS 번호 (예: 65996-92-1)")
+            with col2: new_we = st.selectbox("작업환경 대상", ["O", "X"], index=1)
+            with col3: new_sh = st.selectbox("특수검진 대상", ["O", "X"], index=1)
+            with col4: new_pct = st.number_input("기준 함유량(%)", min_value=0.0, value=1.0)
+            
+            if st.form_submit_button("예외 물질 등록 / 수정"):
+                if new_cas:
+                    custom_db[new_cas] = {"WE": new_we, "SH": new_sh, "threshold": new_pct}
+                    save_custom_db(custom_db)
+                    st.success(f"✅ [{new_cas}] 규칙이 성공적으로 등록되었습니다!")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("CAS 번호를 입력해주세요.")
+                    
+        if custom_db:
+            st.markdown("**현재 등록된 예외 규칙 목록**")
+            cdb_df = pd.DataFrame.from_dict(custom_db, orient="index").reset_index()
+            cdb_df.columns = ["CAS 번호", "작업환경(WE)", "특수검진(SH)", "기준함유량(%)"]
+            st.dataframe(cdb_df, use_container_width=True, hide_index=True)
+        else:
+            st.info("아직 등록된 사내 예외 규칙이 없습니다.")
+
+        st.markdown("---")
+        st.markdown("### 📚 전사 누적 분석 빅데이터 기록")
         if os.path.exists(HISTORY_STORAGE):
             history_files = [f for f in os.listdir(HISTORY_STORAGE) if f.endswith('.csv')]
-            
             if history_files:
-                all_data = []
-                for file_name in history_files:
-                    file_path = os.path.join(HISTORY_STORAGE, file_name)
-                    df = pd.read_csv(file_path)
-                    all_data.append(df)
-                
+                all_data = [pd.read_csv(os.path.join(HISTORY_STORAGE, f)) for f in history_files]
                 if all_data:
-                    merged_df = pd.concat(all_data, ignore_index=True)
-                    if "분석일시" in merged_df.columns:
-                        merged_df = merged_df.sort_values(by="분석일시", ascending=False)
-                    
+                    merged_df = pd.concat(all_data, ignore_index=True).sort_values(by="분석일시", ascending=False) if "분석일시" in all_data[0].columns else pd.concat(all_data, ignore_index=True)
                     st.dataframe(merged_df, use_container_width=True, hide_index=True)
-                    
                     csv = merged_df.to_csv(index=False).encode('utf-8-sig')
                     st.download_button("📥 전사 통합 마스터 데이터 Excel 다운로드", csv, "MSDS_전사마스터기록.csv", "text/csv")
+            else: st.info("아직 누적된 이력이 없습니다.")
+        else: st.info("저장소 레이어가 존재하지 않습니다.")
+    elif input_password: st.error("❌ 비밀번호가 불일치합니다.")
+    else: st.info("🔑 과거 기록 열람 및 예외 DB 등록을 위해 관리자 암호를 입력해 주십시오.")
+
+# ------------------------------------------
+# [Tab 5] 🌟 신규: 사용자 피드백 문의 창구 🌟
+# ------------------------------------------
+with tab5:
+    st.markdown("### 📬 시스템 문의 및 피드백")
+    st.caption("시스템 사용 중 발생한 오류나 건의사항을 남겨주시면 관리자 디스코드 채널로 실시간 전송됩니다.")
+    
+    with st.form("feedback_form"):
+        feedback_text = st.text_area("문의 내용 (자세히 적어주실수록 해결이 빠릅니다)", height=150, placeholder="예: Coal Tar Pitch 분석 시 제품명에 한글이 깨져서 나와요.")
+        submitted = st.form_submit_button("🚀 관리자에게 의견 전송하기")
+        
+        if submitted:
+            if feedback_text.strip() == "":
+                st.warning("내용을 입력해 주세요.")
             else:
-                st.info("아직 저장소에 누적된 분석 이력이 없습니다.")
-        else:
-            st.info("저장소 구조 레이어가 존재하지 않습니다.")
-            
-    elif input_password:
-        st.error("❌ 자격증명 비밀번호가 불일치합니다.")
-    else:
-        st.info("🔑 본 영역은 관리자 전용 암호화 영역입니다. 과거 전체 분석 이력을 추적하시려면 비밀번호를 입력해 주십시오.")
+                with st.spinner("의견을 전송하는 중입니다..."):
+                    success = send_feedback_to_discord(feedback_text, discord_webhook)
+                    if success:
+                        st.success("🎉 소중한 의견이 관리자 디스코드로 성공적으로 전송되었습니다! 감사합니다.")
+                    else:
+                        st.error("🚨 전송에 실패했습니다. 관리자 디스코드 웹훅 연결 상태를 확인해 주세요.")
