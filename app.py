@@ -15,7 +15,9 @@ from pdf2image import convert_from_path
 from ollama import Client 
 import requests 
 
-# PDF 요약 리포트 생성을 위한 reportlab 라이브러리
+# 🌟 영구 보존용 법정 규제망 DB (188종)
+from managed_db import MANAGED_SUBSTANCES_DB
+
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
@@ -26,9 +28,6 @@ from cas_db import LEGAL_CAS_DB
 
 st.set_page_config(page_title="MSDS AI 하이브리드 솔루션", layout="wide")
 
-# ==========================================
-# 0. 전역 설정 및 저장소 폴더 생성 
-# ==========================================
 ADMIN_PASSWORD = "admin1234" 
 DEFAULT_DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1510658141178691765/0dmyjFWGMmPq-mI5bkYY5ffKQ_AYCGdSpPcPly0qYWnQw_RP1s2Gs6vmjyidf1ZO4_aU"
 
@@ -37,8 +36,6 @@ PDF_STORAGE = os.path.join(STORAGE_DIR, "pdfs")
 HISTORY_STORAGE = os.path.join(STORAGE_DIR, "history")
 FONT_STORAGE = os.path.join(STORAGE_DIR, "fonts")
 CUSTOM_DB_PATH = os.path.join(STORAGE_DIR, "custom_cas_db.json")
-
-# 🌟 [신규] 노출기준 비고 DB 파일 경로
 EXPOSURE_DB_PATH = os.path.join(STORAGE_DIR, "exposure_db.json")
 
 os.makedirs(PDF_STORAGE, exist_ok=True)
@@ -70,16 +67,10 @@ def decode_zip_filename(name):
         except: decoded = name
     return unicodedata.normalize('NFC', decoded)
 
-# ==========================================
-# 1. 초기화 및 세션 상태 관리
-# ==========================================
 if "all_results" not in st.session_state: st.session_state.all_results = None
 if "messages" not in st.session_state: st.session_state.messages = []
 if "discord_webhook_url" not in st.session_state: st.session_state.discord_webhook_url = DEFAULT_DISCORD_WEBHOOK
 
-# ==========================================
-# 2. 백엔드 및 저장 로직
-# ==========================================
 @st.cache_data(show_spinner=False)
 def download_korean_font():
     font_url = "https://raw.githubusercontent.com/google/fonts/main/ofl/nanumgothic/NanumGothic-Regular.ttf"
@@ -145,12 +136,12 @@ def generate_pdf_report(item, count=1):
     max_v = item.get('최대(%)', '0')
     pct_display = f"{min_v}%" if min_v == max_v else f"{min_v}% ~ {max_v}%"
 
-    # 🌟 [개선] 노출기준 비고를 7번째 줄에 추가
     rows = [
         ("제 품 명", item.get("제품명", "-")[:30]),
         ("물 질 명", item.get("물질명", "-")[:30]),
         ("CAS 번호", item.get("CAS번호", "-")),
         ("함 유 량", pct_display),
+        ("취급 규제", item.get("취급규제", "해당 없음 (일반 물질)")),
         ("작업환경 대상", "대상물질 (O)" if item.get("작업환경") == "O" else "미대상 (X)"),
         ("특수검진 대상", "대상물질 (O)" if item.get("특수검진") == "O" else "미대상 (X)"),
         ("노출기준 비고", item.get("노출기준비고", "-")[:35]),
@@ -158,7 +149,7 @@ def generate_pdf_report(item, count=1):
 
     for label, val in rows:
         draw_row(label, val, y_pos)
-        y_pos -= 35
+        y_pos -= 30 
 
     y_pos -= 15
     box_height = 70
@@ -224,11 +215,11 @@ def send_to_discord(results_list, webhook_url):
         for item in results_list:
             mi, ma = item.get('최소(%)', '0'), item.get('최대(%)', '0')
             pct_display = f"{mi}%" if mi == ma else f"{mi}% ~ {ma}%"
-            # 🌟 [개선] 디스코드 메시지에도 노출기준 비고 포함
             msg = f"""🔔 **새로운 MSDS 분석 완료!**
 **📄 문서명:** {item['제품명']}
 **🧪 물질명:** {item['물질명']} (CAS: {item['CAS번호']})
 **⚖️ 함유량:** {pct_display}
+**⚠️ 취급규제:** {item.get('취급규제', '해당 없음')}
 **🔍 판정결과:** 작업환경({item['작업환경']}) / 특수검진({item['특수검진']})
 **📝 사유:** {item['사유']}
 **🔖 비고:** {item.get('노출기준비고', '-')}
@@ -396,7 +387,7 @@ with tab1:
             status_text, progress_bar = st.empty(), st.progress(0)
             
             custom_db = load_custom_db()
-            exposure_db = load_exposure_db() # 🌟 노출기준 DB 로드
+            exposure_db = load_exposure_db() 
             
             for idx, item in enumerate(analysis_queue):
                 status_text.info(f"🔄 [{idx+1}/{total_files}] '{item['name']}' 배치 분석 진행 중...")
@@ -445,6 +436,16 @@ with tab1:
                         
                         if len(name) < 2 and cas == "미상": continue
                         
+                        manage_status = "해당 없음 (일반 물질)"
+                        if cas in MANAGED_SUBSTANCES_DB:
+                            manage_status = MANAGED_SUBSTANCES_DB[cas]["type"]
+                            
+                        # 🌟 [핵심 변경] 전체 DB에서 비고란만 쏙 빼고, 출력용으로 [CAS] 지우기
+                        exposure_data = exposure_db.get(cas, {})
+                        exposure_remark = exposure_data.get("비고", "-")
+                        exposure_remark = re.sub(r'\[[\d\-]+\]\s*', '', exposure_remark).strip()
+                        if not exposure_remark: exposure_remark = "-"
+                        
                         we_mark, sh_mark, reason = "X", "X", "DB 미등록"
                         matched_db_info = None
                         match_type = ""
@@ -470,17 +471,15 @@ with tab1:
                             else:
                                 reason = f"{match_type}: 기준({format_val(threshold)}%) 미달"
                                 
-                        # 🌟 [신규] 노출기준 비고 추출
-                        exposure_remark = exposure_db.get(cas, "-")
-                        
                         temp_results.append({
                             "분석일시": get_seoul_time(), 
                             "제품명": unicodedata.normalize('NFC', item["name"].replace(".pdf", "")), 
                             "물질명": unicodedata.normalize('NFC', name),
                             "CAS번호": cas,
                             "최소(%)": format_val(mi), "최대(%)": format_val(ma),
+                            "취급규제": manage_status,
                             "작업환경": we_mark, "특수검진": sh_mark, "모델": track, "사유": reason,
-                            "노출기준비고": exposure_remark # 🌟 비고 저장
+                            "노출기준비고": exposure_remark 
                         })
                 else:
                     st.error(f"❌ '{item['name']}' 정밀 성분 추출 실패.")
@@ -575,6 +574,7 @@ with tab3:
                         else:
                             try:
                                 client = Client(host=api_url)
+                                # 🌟 향후 RAG가 exposure_db의 상세 정보를 참조할 수 있도록 원문 세팅
                                 res = client.chat(model='gemma4:e2b', messages=[{'role': 'user', 'content': f"MSDS 전문가로서 원문을 바탕으로 명확하게 답하세요.\n[원문]\n{txt[:8000]}\n[질문]\n{query}"}])
                                 ans = res['message']['content']
                             except Exception as e: ans = f"🚨 AI 서버 연결 실패: {e}"
@@ -594,13 +594,13 @@ with tab4:
         st.success("🔓 중앙 관리자 인증에 성공했습니다. (왼쪽 사이드바 메뉴 활성화됨)")
         st.markdown("---")
         
-        # 🌟 [신규] 노출기준(비고) DB 자동 추출 파트 🌟
-        st.markdown("### 🗂️ 법정 노출기준 DB 업데이트 (CSV/Excel)")
-        st.caption("고용노동부 '화학물질 및 물리적 인자의 노출기준' 파일을 업로드하면 비고란의 [CAS번호] 특이사항을 추출해 DB화합니다.")
-        exposure_file = st.file_uploader("노출기준 파일 업로드", type=["csv", "xlsx"])
+        # 🌟 [개선] RAG 챗봇 대비 전체 데이터(TWA, 화학식 등 8개 항목) 보존용 DB 구축
+        st.markdown("### 🗂️ 법정 노출기준 전체 DB 업데이트 (CSV/Excel)")
+        st.caption("업로드된 파일을 분석하여 **모든 화학물질의 8가지 데이터(TWA, STEL 등)를 통째로 보존**합니다.")
+        exposure_file = st.file_uploader("노출기준 파일 업로드 (모든 데이터 보존용)", type=["csv", "xlsx"])
         
-        if st.button("DB 업데이트 실행") and exposure_file:
-            with st.spinner("파일을 분석하여 DB를 구축하는 중입니다..."):
+        if st.button("전체 DB 구축 실행") and exposure_file:
+            with st.spinner("파일의 모든 열을 분석하여 거대 DB를 구축하는 중입니다..."):
                 try:
                     if exposure_file.name.endswith(".csv"):
                         try: df = pd.read_csv(exposure_file, header=None, encoding='utf-8')
@@ -610,18 +610,40 @@ with tab4:
                     else: df = pd.read_excel(exposure_file, header=None)
 
                     new_exposure_db = {}
-                    for _, row in df.iterrows():
-                        for cell in row:
-                            cell_str = str(cell).strip()
-                            # [CAS] 정규식 스캔
-                            m = re.search(r'\[(\d+-\d+-\d+)\](.*)', cell_str)
-                            if m:
-                                cas_no = m.group(1).strip()
-                                new_exposure_db[cas_no] = cell_str 
+                    for idx, row in df.iterrows():
+                        if idx < 7: continue # 헤더 스킵
+                        
+                        def clean_cell(val):
+                            return str(val).strip() if pd.notna(val) and str(val).strip() != 'nan' else ""
+                        
+                        ko_name = clean_cell(row[1])
+                        if not ko_name: continue
+                        
+                        en_name = clean_cell(row[2])
+                        formula = clean_cell(row[3])
+                        twa_ppm = clean_cell(row[4])
+                        twa_mg = clean_cell(row[5])
+                        stel_ppm = clean_cell(row[6])
+                        stel_mg = clean_cell(row[7])
+                        remark = clean_cell(row[8])
+                        
+                        cas_match = re.search(r'\[?(\d{2,7}-\d{2}-\d)\]?', remark)
+                        cas_key = cas_match.group(1) if cas_match else ko_name 
+                        
+                        new_exposure_db[cas_key] = {
+                            "국문표기": ko_name,
+                            "영문표기": en_name,
+                            "화학식": formula,
+                            "TWA(ppm)": twa_ppm,
+                            "TWA(mg/m3)": twa_mg,
+                            "STEL(ppm)": stel_ppm,
+                            "STEL(mg/m3)": stel_mg,
+                            "비고": remark
+                        }
                     
                     with open(EXPOSURE_DB_PATH, "w", encoding="utf-8") as f:
                         json.dump(new_exposure_db, f, ensure_ascii=False, indent=4)
-                    st.success(f"🎉 성공적으로 {len(new_exposure_db)}개의 노출기준 특이사항(비고)이 DB에 저장되었습니다!")
+                    st.success(f"🎉 성공적으로 {len(new_exposure_db)}개의 노출기준 마스터 데이터가 영구 보존되었습니다!")
                     time.sleep(1)
                     st.rerun()
                 except Exception as e:
@@ -629,11 +651,10 @@ with tab4:
                     
         exposure_db = load_exposure_db()
         if exposure_db:
-            with st.expander(f"👀 현재 등록된 노출기준 비고 목록 보기 (총 {len(exposure_db)}건)"):
+            with st.expander(f"👀 현재 등록된 노출기준 전체 마스터 DB 보기 (총 {len(exposure_db)}건)"):
                 exp_df = pd.DataFrame.from_dict(exposure_db, orient="index").reset_index()
-                exp_df.columns = ["CAS 번호", "노출기준 비고 내용"]
                 st.dataframe(exp_df.head(100), use_container_width=True, hide_index=True)
-                st.caption("※ 너무 많아 상위 100개만 표시합니다.")
+                st.caption("※ 너무 많아 상위 100개만 표시합니다. (TWA, STEL 등 모두 보존됨)")
 
         st.markdown("---")
         st.markdown("### ⚙️ 사용자 예외 규칙 관리 (Custom DB)")
