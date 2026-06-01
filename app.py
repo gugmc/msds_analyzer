@@ -7,6 +7,7 @@ import pandas as pd
 import time
 import re
 import zipfile
+import unicodedata # 🌟 Mac OS 한글 깨짐(분리) 현상을 완벽히 복원하는 마법의 라이브러리 추가
 from io import BytesIO
 from datetime import datetime 
 import pytz 
@@ -41,14 +42,17 @@ def get_seoul_time(format_str="%Y-%m-%d %H:%M:%S"):
     seoul_tz = pytz.timezone("Asia/Seoul")
     return datetime.now(seoul_tz).strftime(format_str)
 
+# 🌟 [개선] 윈도우/Mac ZIP 한글 파일명 완벽 복원 (NFC 정규화)
 def decode_zip_filename(name):
     try:
-        return name.encode('cp437').decode('cp949')
+        decoded = name.encode('cp437').decode('cp949')
     except:
         try:
-            return name.encode('cp437').decode('utf-8')
+            decoded = name.encode('cp437').decode('utf-8')
         except:
-            return name
+            decoded = name
+    # Mac에서 쪼개진 한글(NFD)을 온전한 한글(NFC)로 강제 조립
+    return unicodedata.normalize('NFC', decoded)
 
 # ==========================================
 # 1. 초기화 및 세션 상태 관리
@@ -133,11 +137,16 @@ def generate_pdf_report(item, count=1):
         p.setFillColor(colors.HexColor("#2C3E50"))
         p.drawString(185, y + 2, str(val))
 
+    # 🌟 [개선] 35% ~ 35% 중복 출력 방지 로직
+    min_v = item.get('최소(%)', '0')
+    max_v = item.get('최대(%)', '0')
+    pct_display = f"{min_v}%" if min_v == max_v else f"{min_v}% ~ {max_v}%"
+
     rows = [
         ("제 품 명", item.get("제품명", "-")),
         ("물 질 명", item.get("물질명", "-")),
         ("CAS 번호", item.get("CAS번호", "-")),
-        ("함 유 량", f"{item.get('최소(%)', '0')}% ~ {item.get('최대(%)', '0')}%"),
+        ("함 유 량", pct_display),
         ("작업환경 대상", "대상물질 (O)" if item.get("작업환경") == "O" else "미대상 (X)"),
         ("특수검진 대상", "대상물질 (O)" if item.get("특수검진") == "O" else "미대상 (X)"),
         ("배정 AI 모델", item.get("모델", "-")),
@@ -169,23 +178,44 @@ def generate_pdf_report(item, count=1):
     else:
         p.drawString(185, y_pos - 19, reason_text)
 
-    # 5. 하단 서명란
-    y_pos -= 120
+    # 5. 하단 공인 문구
+    y_pos -= 100
     p.setFont(font_name, 12)
     p.setFillColor(colors.HexColor("#2C3E50"))
     p.drawCentredString(width / 2, y_pos, "본 확인서는 산업안전보건법 및 화학물질관리법 등 관련 규정에 의거하여")
     p.drawCentredString(width / 2, y_pos - 20, "AI 하이브리드 전문가 검증 시스템을 통해 판별 및 검토되었음을 확인합니다.")
 
-    y_pos -= 65
-    p.setFont(font_name, 11)
-    p.setFillColor(colors.HexColor("#34495E"))
-    p.drawString(70, y_pos, "담 당 자 성 명 :  ____________________")
-    p.drawString(70, y_pos - 25, "서 명 :  ____________________")
-
-    y_pos -= 65
+    # 🌟 [개선] 서명란을 공공기관 표준 '결재 박스(Table)' 형태로 변경
+    y_pos -= 100
+    
+    # 좌측: 기관명
     p.setFont(font_name, 14)
     p.setFillColor(colors.HexColor("#2C3E50"))
-    p.drawCentredString(width / 2, y_pos, "가천대길병원 작업환경측정실 책임자")
+    p.drawString(50, y_pos + 20, "가천대길병원 작업환경측정실")
+
+    # 우측: 결재 박스
+    box_w = 140
+    box_h = 60
+    start_x = width - 50 - box_w
+    start_y = y_pos
+
+    p.setStrokeColor(colors.HexColor("#2C3E50"))
+    p.setLineWidth(1)
+    # 테두리
+    p.rect(start_x, start_y, box_w, box_h)
+    # 세로줄 (담당 / 책임 나누기)
+    p.line(start_x + box_w/2, start_y, start_x + box_w/2, start_y + box_h)
+    # 가로줄 (헤더 나누기)
+    p.line(start_x, start_y + box_h - 20, start_x + box_w, start_y + box_h - 20)
+
+    # 결재 텍스트
+    p.setFont(font_name, 10)
+    p.drawCentredString(start_x + box_w/4, start_y + box_h - 14, "담 당")
+    p.drawCentredString(start_x + box_w*3/4, start_y + box_h - 14, "책 임")
+
+    p.setFillColor(colors.HexColor("#7F8C8D"))
+    p.drawCentredString(start_x + box_w/4, start_y + 15, "(서 명)")
+    p.drawCentredString(start_x + box_w*3/4, start_y + 15, "(서 명)")
 
     p.save()
     buffer.seek(0)
@@ -205,10 +235,14 @@ def send_to_discord(results_list):
 
     try:
         for item in results_list:
+            mi = item.get('최소(%)', '0')
+            ma = item.get('최대(%)', '0')
+            pct_display = f"{mi}%" if mi == ma else f"{mi}% ~ {ma}%"
+
             msg = f"🔔 **새로운 MSDS 분석 완료!**\n" \
                   f"**📄 문서명:** {item['제품명']}\n" \
                   f"**🧪 물질명:** {item['물질명']} (CAS: {item['CAS번호']})\n" \
-                  f"**⚖️ 함유량:** {item['최소(%)']} ~ {item['최대(%)']}%\n" \
+                  f"**⚖️ 함유량:** {pct_display}\n" \
                   f"**🔍 판정결과:** 작업환경({item['작업환경']}) / 특수검진({item['특수검진']})\n" \
                   f"**📝 사유:** {item['사유']}\n" \
                   f"**⏱️ 분석일시:** {item['분석일시']}\n" \
@@ -241,9 +275,8 @@ def get_pdf_content(file_path):
                     if not row or all(cell is None or str(cell).strip() == '' for cell in row): continue
                     extracted_tables.append([str(cell).replace('\n', ' ').strip() if cell else "" for cell in row])
     
-    # 🌟 에러 났던 정규식 구간을 짧고 안전하게 수정했습니다
-    sec3_p = re.compile(r"(?:제\s*3\s*항|3\s*\.)\s*(?:구성성분|화학물질|조성|명칭|Composition)", re.IGNORECASE)
-    sec4_p = re.compile(r"(?:제\s*4\s*항|4\s*\.)\s*(?:응급조치|First\s*aid)", re.IGNORECASE)
+    sec3_p = re.compile(r"(?:제\s*3\s*항|3\s*\.)\s*(?:구\s*성\s*성\s*분|화\s*학\s*물\s*질|조\s*성|명\s*칭|Composition)", re.IGNORECASE)
+    sec4_p = re.compile(r"(?:제\s*4\s*항|4\s*\.)\s*(?:응\s*급\s*조\s*치|First\s*aid)", re.IGNORECASE)
     s_m, e_m = sec3_p.search(full_text.replace(" ", "")), sec4_p.search(full_text.replace(" ", ""))
     
     isolated = ""
@@ -272,7 +305,6 @@ def extract_info_with_ai(prompt_content, target_model, api_url, is_image=False, 
         if match: return json.loads(match.group(0)), {}
         return [], {}
     except Exception as e: 
-        st.error(f"🚨 API 연결 오류: {e}")
         return [], {}
 
 def get_min_max_content(content_str):
@@ -337,7 +369,6 @@ st.sidebar.markdown("---")
 
 uploaded_files = st.sidebar.file_uploader("📂 MSDS PDF 또는 ZIP 파일 업로드", type=["pdf", "zip"], accept_multiple_files=True)
 
-# 🌟 [신규 적용] 탭을 4개로 분리하여 역할 분담!
 tab1, tab2, tab3, tab4 = st.tabs(["📊 분석 자동 판별", "📄 리포트 출력 (PDF)", "💬 MSDS 챗봇", "📁 관리자 전용"])
 
 # ------------------------------------------
@@ -360,8 +391,10 @@ with tab1:
                                 "source": f"ZIP: {f.name}"
                             })
             else:
+                # 🌟 [개선] 개별 PDF 업로드 시에도 한글 파일명 강제 복원 적용
+                clean_name = unicodedata.normalize('NFC', f.name)
                 analysis_queue.append({
-                    "name": f.name,
+                    "name": clean_name,
                     "bytes": f.getvalue(),
                     "source": "개별 PDF 업로드"
                 })
@@ -452,8 +485,9 @@ with tab1:
                         
                         temp_results.append({
                             "분석일시": get_seoul_time(), 
-                            "제품명": item["name"].replace(".pdf", ""), 
-                            "물질명": name, "CAS번호": cas,
+                            "제품명": unicodedata.normalize('NFC', item["name"].replace(".pdf", "")), # 제품명도 확실히 복원 
+                            "물질명": unicodedata.normalize('NFC', name),
+                            "CAS번호": cas,
                             "최소(%)": format_val(mi), "최대(%)": format_val(ma),
                             "작업환경": we_mark, "특수검진": sh_mark, "모델": track, "사유": reason
                         })
@@ -486,13 +520,13 @@ with tab1:
             csv = df.to_csv(index=False).encode('utf-8-sig')
             st.download_button("📥 전체 결과 Excel(.CSV)로 저장", csv, "MSDS_분석결과.csv", "text/csv")
             
-            st.info("💡 **PDF 확인서 출력은 옆의 [📄 리포트 출력 (PDF)] 탭으로 이동해 주세요!**")
+            st.info("💡 **PDF 확인서 출력은 위쪽의 [📄 리포트 출력 (PDF)] 탭을 클릭해 주세요!**")
     else:
         st.info("👈 왼쪽 사이드바에서 PDF 또는 ZIP 파일을 업로드해 주세요.")
 
 
 # ------------------------------------------
-# [Tab 2] 🌟 신규 분리: 리포트 출력 센터 🌟
+# [Tab 2] 리포트 출력 센터
 # ------------------------------------------
 with tab2:
     st.subheader("📄 안전보건 요약 리포트 (PDF) 출력 센터")
@@ -559,7 +593,7 @@ with tab3:
                             decoded_name = decode_zip_filename(name)
                             document_names.append(os.path.basename(decoded_name))
             else:
-                document_names.append(f.name)
+                document_names.append(unicodedata.normalize('NFC', f.name))
                 
         if document_names:
             sel_file = st.selectbox("질문할 문서 선택", document_names)
