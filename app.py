@@ -641,7 +641,7 @@ with tab4:
     if input_password == ADMIN_PASSWORD:
         st.success("🔓 중앙 관리자 인증에 성공했습니다. (왼쪽 사이드바에 관리자 메뉴가 활성화되었습니다)")
         st.markdown("---")
-        st.markdown("### 📚 전사 누적 분석 빅데이터 기록 (서울 시간 기준)")
+        st.markdown("### 📚 전사 누적 분석 빅데이터 기록 (서울 시간 기준)https://iguana-garter-ditch.ngrok-free.dev")
         
         if os.path.exists(HISTORY_STORAGE):
             history_files = [f for f in os.listdir(HISTORY_STORAGE) if f.endswith('.csv')]
