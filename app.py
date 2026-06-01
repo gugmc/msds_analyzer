@@ -9,7 +9,7 @@ import re
 import zipfile
 from io import BytesIO
 from datetime import datetime 
-import pytz # 🌟 서울 시간대 설정을 위한 라이브러리 추가
+import pytz 
 from pdf2image import convert_from_path
 from ollama import Client 
 import requests 
@@ -37,7 +37,6 @@ os.makedirs(PDF_STORAGE, exist_ok=True)
 os.makedirs(HISTORY_STORAGE, exist_ok=True)
 os.makedirs(FONT_STORAGE, exist_ok=True)
 
-# 🌟 모든 기록을 '아시아/서울' 시간대로 통일하는 함수
 def get_seoul_time(format_str="%Y-%m-%d %H:%M:%S"):
     seoul_tz = pytz.timezone("Asia/Seoul")
     return datetime.now(seoul_tz).strftime(format_str)
@@ -65,7 +64,8 @@ def download_korean_font():
             return None
     return font_path
 
-def generate_pdf_report(item):
+# 🌟 수정: 동시 분석 시 문서번호 중복 방지를 위해 count 변수 추가 수용
+def generate_pdf_report(item, count=1):
     """선택된 유해물질 항목에 대해 깔끔한 A4 1장짜리 검토 결과 확인서 PDF를 생성합니다."""
     font_path = download_korean_font()
     font_name = "Helvetica"
@@ -99,11 +99,11 @@ def generate_pdf_report(item):
     p.setLineWidth(1.5)
     p.line(50, height - 100, width - 50, height - 100)
 
-    # 3. 문서 정보 표 헤더 스타일 메타데이터 정보 (서울 시간대 반영)
+    # 3. 문서 정보 표 헤더 스타일 메타데이터 정보 (🌟 뒤에 고유 번호 순번 접미사 -01, -02 추가)
     p.setFont(font_name, 10)
     p.setFillColor(colors.HexColor("#7F8C8D"))
     p.drawString(50, height - 125, f"발행일시: {get_seoul_time()}")
-    p.drawRightString(width - 50, height - 125, "문서번호: GIL-MSDS-" + get_seoul_time("%m%d%H%M"))
+    p.drawRightString(width - 50, height - 125, f"문서번호: GIL-MSDS-{get_seoul_time('%m%d%H%M')}-{count:02d}")
 
     # 4. 상세 내용 배치 (라벨 - 데이터 테이블 형태 구현)
     y_pos = height - 160
@@ -126,7 +126,6 @@ def generate_pdf_report(item):
         p.setFillColor(colors.HexColor("#2C3E50"))
         p.drawString(185, y + 2, str(val))
 
-    # 🌟 용어 수정: 작업측정 -> 작업환경 / 특수진단 -> 특수검진
     rows = [
         ("제 품 명", item.get("제품명", "-")),
         ("물 질 명", item.get("물질명", "-")),
@@ -141,7 +140,7 @@ def generate_pdf_report(item):
         draw_row(label, val, y_pos)
         y_pos -= 35
 
-# 🌟 법적 규제 사유 상자 조절 및 가운데 맞춤(높낮이) 정렬 구현
+    # 법적 규제 사유 상자 조절 및 가운데 맞춤 정렬 수식 고정
     y_pos -= 15
     box_height = 70
     p.setFillColor(colors.HexColor("#F8F9FA"))
@@ -149,34 +148,37 @@ def generate_pdf_report(item):
     p.setFillColor(colors.HexColor("#FFFFFF"))
     p.rect(170, y_pos - 50, width - 220, box_height, fill=True, stroke=True)
     
-    # 좌측 라벨 텍스트 높낮이 완벽 정렬
     p.setFont(font_name, 11)
     p.setFillColor(colors.HexColor("#34495E"))
     p.drawString(65, y_pos - 19, "법적 규제 사유")
     
-    # 우측 텍스트 내용 길이 검토 및 높낮이 완벽 정렬
     reason_text = item.get("사유", "-")
     p.setFont(font_name, 10)
     p.setFillColor(colors.HexColor("#C0392B" if "이상" in reason_text else "#27AE60"))
     
     if len(reason_text) > 40:
-        # 두 줄 출력일 때 상하 대칭 배치 계산
         p.drawString(185, y_pos - 10, reason_text[:40])
         p.drawString(185, y_pos - 28, reason_text[40:])
     else:
-        # 한 줄 출력일 때 상자 안에서 수직 완벽 정렬 (y_pos - 19)
         p.drawString(185, y_pos - 19, reason_text)
 
-    # 5. 하단 법적 공인 문구 및 책임자 명기 (도장 없이)
+    # 5. 하단 법적 공인 문구 및 책임자 명기 (🌟 담당자 성명 및 서명란 신설)
     y_pos -= 120
     p.setFont(font_name, 12)
     p.setFillColor(colors.HexColor("#2C3E50"))
     p.drawCentredString(width / 2, y_pos, "본 확인서는 산업안전보건법 및 화학물질관리법 등 관련 규정에 의거하여")
     p.drawCentredString(width / 2, y_pos - 20, "AI 하이브리드 전문가 검증 시스템을 통해 판별 및 검토되었음을 확인합니다.")
 
-    y_pos -= 80
+    # 🌟 [신규 기능] 담당자 작성 및 서명 영역 배치
+    y_pos -= 65
+    p.setFont(font_name, 11)
+    p.setFillColor(colors.HexColor("#34495E"))
+    p.drawString(70, y_pos, "담 당 자 성 명 :  ____________________")
+    p.drawString(70, y_pos - 25, "서 명 / 기 인 :  ____________________")
+
+    y_pos -= 65
     p.setFont(font_name, 14)
-    # 🌟 문구 수정 및 요청하신 대로 빨간 도장 그리기 소스 삭제
+    p.setFillColor(colors.HexColor("#2C3E50"))
     p.drawCentredString(width / 2, y_pos, "가천대길병원 작업환경측정실 책임자")
 
     p.save()
@@ -191,7 +193,6 @@ def save_file_locally(file_name, file_bytes):
     return file_path
 
 def send_to_discord(results_list):
-    # 👇 여기에 디스코드 웹훅 URL을 붙여넣으세요!
     WEBHOOK_URL = "https://discord.com/api/webhooks/여기에_복사한_웹훅_주소를_넣으세요" 
     
     if not WEBHOOK_URL or "여기에_복사한_웹훅_주소를_넣으세요" in WEBHOOK_URL:
@@ -199,7 +200,6 @@ def send_to_discord(results_list):
 
     try:
         for item in results_list:
-            # 🌟 알림 문구 용어 동기화 수정
             msg = f"🔔 **새로운 MSDS 분석 완료!**\n" \
                   f"**📄 문서명:** {item['제품명']}\n" \
                   f"**🧪 물질명:** {item['물질명']} (CAS: {item['CAS번호']})\n" \
@@ -331,7 +331,6 @@ st.sidebar.markdown("---")
 
 uploaded_files = st.sidebar.file_uploader("📂 MSDS PDF 또는 ZIP 파일 업로드", type=["pdf", "zip"], accept_multiple_files=True)
 
-# 🌟 탭 이름 변경: 전체 누적 데이터 보기 -> 관리자 전용
 tab1, tab2, tab3 = st.tabs(["📊 대상물질 자동 판별", "💬 MSDS 대화형 챗봇 (RAG)", "📁 관리자 전용"])
 
 # ------------------------------------------
@@ -445,9 +444,8 @@ with tab1:
                             else:
                                 reason = f"{match_type}: 기준({format_val(threshold)}%) 미달"
                         
-                        # 🌟 표 내부 컬럼명을 '작업환경', '특수검진'으로 바인딩 수정
                         temp_results.append({
-                            "분석일시": get_seoul_time(), # 🌟 서울 시간 기록 적용
+                            "분석일시": get_seoul_time(), 
                             "제품명": item["name"].replace(".pdf", ""), 
                             "물질명": name, "CAS번호": cas,
                             "최소(%)": format_val(mi), "최대(%)": format_val(ma),
@@ -466,7 +464,7 @@ with tab1:
             
             if temp_results:
                 history_df = pd.DataFrame(temp_results)
-                timestamp = get_seoul_time("%Y%m%d_%H%M%S") # 🌟 서울 시간 기준 파일 생성
+                timestamp = get_seoul_time("%Y%m%d_%H%M%S") 
                 history_filename = f"batch_result_{timestamp}.csv"
                 history_df.to_csv(os.path.join(HISTORY_STORAGE, history_filename), index=False, encoding='utf-8-sig')
                 st.success(f"🎉 모든 대량 배치 분석 완료! (파일명: {history_filename})")
@@ -478,7 +476,6 @@ with tab1:
             df = pd.DataFrame(st.session_state.all_results)
             display_df = df.drop(columns=["분석일시"]) if "분석일시" in df.columns else df
             
-            # 🌟 표 마킹 수정: 작업측정->작업환경, 특수진단->특수검진 컬럼에 맞춤 스타일 적용
             st.dataframe(display_df.style.map(color_ox, subset=['작업환경', '특수검진']), use_container_width=True, hide_index=True)
             
             csv = df.to_csv(index=False).encode('utf-8-sig')
@@ -497,7 +494,8 @@ with tab1:
                 selected_idx = int(selected_option.split("]")[0].replace("[", "")) - 1
                 target_item = st.session_state.all_results[selected_idx]
                 
-                pdf_data = generate_pdf_report(target_item)
+                # 🌟 수정: 일괄 출력 대상에 매칭되는 index 번호 순번을 count 인자로 전달하여 고유 문서 번호 꼬리표 결합
+                pdf_data = generate_pdf_report(target_item, count=selected_idx + 1)
                 st.download_button(
                     label=f"📥 {target_item['물질명']} 요약 리포트(PDF) 다운로드",
                     data=pdf_data,
