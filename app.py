@@ -62,6 +62,28 @@ def decode_zip_filename(name):
         except: decoded = name
     return unicodedata.normalize('NFC', decoded)
 
+# 🌟 [신규] 누적 분석 건수 및 오늘 분석 건수 계산 함수
+def get_analysis_stats():
+    total_count = 0
+    today_count = 0
+    today_str = get_seoul_time("%Y-%m-%d")
+    
+    if os.path.exists(HISTORY_STORAGE):
+        for f in os.listdir(HISTORY_STORAGE):
+            if f.endswith('.csv'):
+                try:
+                    df = pd.read_csv(os.path.join(HISTORY_STORAGE, f))
+                    total_count += len(df)
+                    if "분석일시" in df.columns:
+                        # 오늘 날짜로 시작하는 데이터만 필터링
+                        today_df = df[df["분석일시"].astype(str).str.startswith(today_str)]
+                        today_count += len(today_df)
+                except:
+                    pass
+                    
+    # 누적 건수는 10000부터 시작하도록 기본값 추가
+    return 10000 + total_count, today_count
+
 if "all_results" not in st.session_state: st.session_state.all_results = None
 if "messages" not in st.session_state: st.session_state.messages = []
 if "discord_webhook_url" not in st.session_state: st.session_state.discord_webhook_url = DEFAULT_DISCORD_WEBHOOK
@@ -110,16 +132,16 @@ def generate_pdf_report(item, count=1):
     p.drawString(50, height - 125, f"발행일시: {get_seoul_time()}")
     p.drawRightString(width - 50, height - 125, f"문서번호: GIL-MSDS-{get_seoul_time('%m%d%H%M')}-{count:02d}")
 
-    y_pos = height - 160
+    y_pos = height - 150
     
     def draw_row(label, val, y):
         p.setFillColor(colors.HexColor("#F8F9FA"))
-        p.rect(50, y - 10, 120, 30, fill=True, stroke=False)
+        p.rect(50, y - 8, 120, 26, fill=True, stroke=False)
         p.setFillColor(colors.HexColor("#FFFFFF"))
-        p.rect(170, y - 10, width - 220, 30, fill=True, stroke=False)
+        p.rect(170, y - 8, width - 220, 26, fill=True, stroke=False)
         p.setStrokeColor(colors.HexColor("#E2E8F0"))
         p.setLineWidth(1)
-        p.rect(50, y - 10, width - 100, 30, fill=False, stroke=True)
+        p.rect(50, y - 8, width - 100, 26, fill=False, stroke=True)
         p.setFont(font_name, 11)
         p.setFillColor(colors.HexColor("#34495E"))
         p.drawString(65, y + 2, label)
@@ -137,6 +159,8 @@ def generate_pdf_report(item, count=1):
         ("CAS 번호", item.get("CAS번호", "-")),
         ("함 유 량", pct_display),
         ("취급 규제", item.get("취급규제", "해당 없음 (일반 물질)")),
+        ("TWA (노출기준)", item.get("TWA", "-")),
+        ("STEL/C (노출기준)", item.get("STEL/C", "-")),
         ("작업환경 대상", "대상물질 (O)" if item.get("작업환경") == "O" else "미대상 (X)"),
         ("특수검진 대상", "대상물질 (O)" if item.get("특수검진") == "O" else "미대상 (X)"),
         ("노출기준 비고", item.get("노출기준비고", "-")[:35]),
@@ -144,36 +168,36 @@ def generate_pdf_report(item, count=1):
 
     for label, val in rows:
         draw_row(label, val, y_pos)
-        y_pos -= 30 
+        y_pos -= 26 
 
     y_pos -= 15
-    box_height = 70
+    box_height = 65
     p.setFillColor(colors.HexColor("#F8F9FA"))
-    p.rect(50, y_pos - 50, 120, box_height, fill=True, stroke=True)
+    p.rect(50, y_pos - 45, 120, box_height, fill=True, stroke=True)
     p.setFillColor(colors.HexColor("#FFFFFF"))
-    p.rect(170, y_pos - 50, width - 220, box_height, fill=True, stroke=True)
+    p.rect(170, y_pos - 45, width - 220, box_height, fill=True, stroke=True)
     
     p.setFont(font_name, 11)
     p.setFillColor(colors.HexColor("#34495E"))
-    p.drawString(65, y_pos - 19, "법적 규제 사유")
+    p.drawString(65, y_pos - 15, "법적 규제 사유")
     
     reason_text = item.get("사유", "-")
     p.setFont(font_name, 10)
     p.setFillColor(colors.HexColor("#C0392B" if "이상" in reason_text else "#27AE60"))
     
     if len(reason_text) > 40:
-        p.drawString(185, y_pos - 10, reason_text[:40])
-        p.drawString(185, y_pos - 28, reason_text[40:])
+        p.drawString(185, y_pos - 8, reason_text[:40])
+        p.drawString(185, y_pos - 24, reason_text[40:])
     else:
-        p.drawString(185, y_pos - 19, reason_text)
+        p.drawString(185, y_pos - 15, reason_text)
 
-    y_pos -= 100
+    y_pos -= 85
     p.setFont(font_name, 12)
     p.setFillColor(colors.HexColor("#2C3E50"))
     p.drawCentredString(width / 2, y_pos, "본 확인서는 산업안전보건법 및 화학물질관리법 등 관련 규정에 의거하여")
     p.drawCentredString(width / 2, y_pos - 20, "AI 하이브리드 전문가 검증 시스템을 통해 판별 및 검토되었음을 확인합니다.")
 
-    y_pos -= 100
+    y_pos -= 80
     p.setFont(font_name, 14)
     p.setFillColor(colors.HexColor("#2C3E50"))
     p.drawString(50, y_pos + 20, "가천대길병원 작업환경측정실")
@@ -215,6 +239,7 @@ def send_to_discord(results_list, webhook_url):
 **🧪 물질명:** {item['물질명']} (CAS: {item['CAS번호']})
 **⚖️ 함유량:** {pct_display}
 **⚠️ 취급규제:** {item.get('취급규제', '해당 없음')}
+**📏 기준치:** TWA({item.get('TWA', '-')}) / STEL({item.get('STEL/C', '-')})
 **🔍 판정결과:** 작업환경({item['작업환경']}) / 특수검진({item['특수검진']})
 **📝 사유:** {item['사유']}
 **🔖 비고:** {item.get('노출기준비고', '-')}
@@ -319,9 +344,23 @@ def extract_full_text_for_rag(file_obj):
     return full_text
 
 # ==========================================
-# 3. Streamlit UI 영역
+# 3. Streamlit UI 영역 (통계 대시보드 추가)
 # ==========================================
-st.title("🛡️ AI 산업안전보건 전문가 시스템")
+# 🌟 [신규] 상단 레이아웃 분할 및 위젯 표시
+col_title, col_total, col_today = st.columns([6, 2, 2])
+
+with col_title:
+    st.title("🛡️ AI 산업안전보건 전문가 시스템")
+
+# 누적 및 오늘 분석 건수 계산
+total_analyzed, today_analyzed = get_analysis_stats()
+
+with col_total:
+    st.metric(label="📊 누적 분석 건수", value=f"{total_analyzed:,} 건")
+with col_today:
+    st.metric(label="🔥 오늘 분석 건수", value=f"{today_analyzed:,} 건")
+
+st.markdown("---")
 
 st.sidebar.markdown("### 🔌 AI 서버 연결 설정")
 api_url = st.sidebar.text_input("Ollama API 주소 (Ngrok URL)", value="http://localhost:11434")
@@ -434,8 +473,23 @@ with tab1:
                         if cas in MANAGED_SUBSTANCES_DB:
                             manage_status = MANAGED_SUBSTANCES_DB[cas]["type"]
                             
-                        # 🌟 exposure_oel.py 데이터베이스에서 가져오기
                         exposure_data = EXPOSURE_LIMITS_DB.get(cas, {})
+                        
+                        twa_ppm = str(exposure_data.get("TWA(ppm)", "")).strip()
+                        twa_mg = str(exposure_data.get("TWA(mg/m3)", "")).strip()
+                        stel_ppm = str(exposure_data.get("STEL(ppm)", "")).strip()
+                        stel_mg = str(exposure_data.get("STEL(mg/m3)", "")).strip()
+                        
+                        def format_oel(ppm, mg):
+                            if ppm in ["", "-"] and mg in ["", "-"]: return "-"
+                            res = []
+                            if ppm not in ["", "-"]: res.append(f"{ppm} ppm")
+                            if mg not in ["", "-"]: res.append(f"{mg} mg/㎥")
+                            return " / ".join(res)
+                            
+                        twa_str = format_oel(twa_ppm, twa_mg)
+                        stel_str = format_oel(stel_ppm, stel_mg)
+
                         exposure_remark = exposure_data.get("비고", "-")
                         exposure_remark = re.sub(r'\[[\d\-]+\]\s*', '', exposure_remark).strip()
                         if not exposure_remark: exposure_remark = "-"
@@ -472,6 +526,8 @@ with tab1:
                             "CAS번호": cas,
                             "최소(%)": format_val(mi), "최대(%)": format_val(ma),
                             "취급규제": manage_status,
+                            "TWA": twa_str,
+                            "STEL/C": stel_str,
                             "작업환경": we_mark, "특수검진": sh_mark, "모델": track, "사유": reason,
                             "노출기준비고": exposure_remark 
                         })
