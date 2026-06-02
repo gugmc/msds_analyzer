@@ -68,7 +68,6 @@ def decode_zip_filename(name):
             decoded = name
     return unicodedata.normalize('NFC', decoded)
 
-# 🌟 누적 분석 건수 및 오늘 분석 건수 계산 함수
 def get_analysis_stats():
     total_count = 0
     today_count = 0
@@ -388,8 +387,16 @@ with col_today:
 st.markdown("---")
 
 st.sidebar.markdown("### 🔌 AI 서버 연결 설정")
-api_url = st.sidebar.text_input("Ollama API 주소 (Ngrok URL)", value="http://localhost:11434")
-st.sidebar.caption("※ 배포 환경에서는 Ngrok 주소를 입력하세요.")
+
+# 🌟 [단축어 적용] gil 입력 시 Ngrok 주소 자동 매핑
+raw_api_url = st.sidebar.text_input("Ollama API 주소 ('gil' 입력 가능)", value="http://localhost:11434")
+if raw_api_url.strip().lower() == "gil":
+    api_url = "https://iguana-garter-ditch.ngrok-free.dev"
+    st.sidebar.success("🔗 [gil] 단축어 모드 활성화됨!")
+else:
+    api_url = raw_api_url
+
+st.sidebar.caption("※ 배포 환경에서는 전체 Ngrok 주소나 단축어 'gil'을 입력하세요.")
 st.sidebar.markdown("---")
 
 discord_webhook = ""
