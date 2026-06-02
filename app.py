@@ -62,7 +62,7 @@ def decode_zip_filename(name):
         except: decoded = name
     return unicodedata.normalize('NFC', decoded)
 
-# 🌟 [신규] 누적 분석 건수 및 오늘 분석 건수 계산 함수
+# 🌟 누적 분석 건수 및 오늘 분석 건수 계산 함수
 def get_analysis_stats():
     total_count = 0
     today_count = 0
@@ -75,13 +75,10 @@ def get_analysis_stats():
                     df = pd.read_csv(os.path.join(HISTORY_STORAGE, f))
                     total_count += len(df)
                     if "분석일시" in df.columns:
-                        # 오늘 날짜로 시작하는 데이터만 필터링
                         today_df = df[df["분석일시"].astype(str).str.startswith(today_str)]
                         today_count += len(today_df)
                 except:
                     pass
-                    
-    # 누적 건수는 10000부터 시작하도록 기본값 추가
     return 10000 + total_count, today_count
 
 if "all_results" not in st.session_state: st.session_state.all_results = None
@@ -344,15 +341,13 @@ def extract_full_text_for_rag(file_obj):
     return full_text
 
 # ==========================================
-# 3. Streamlit UI 영역 (통계 대시보드 추가)
+# 3. Streamlit UI 영역
 # ==========================================
-# 🌟 [신규] 상단 레이아웃 분할 및 위젯 표시
 col_title, col_total, col_today = st.columns([6, 2, 2])
 
 with col_title:
     st.title("🛡️ AI 산업안전보건 전문가 시스템")
 
-# 누적 및 오늘 분석 건수 계산
 total_analyzed, today_analyzed = get_analysis_stats()
 
 with col_total:
@@ -480,11 +475,22 @@ with tab1:
                         stel_ppm = str(exposure_data.get("STEL(ppm)", "")).strip()
                         stel_mg = str(exposure_data.get("STEL(mg/m3)", "")).strip()
                         
+                        # 🌟 [신규/개선] C (최고노출기준) 문자가 있으면 무조건 띄어쓰기하여 명확하게 포맷팅
                         def format_oel(ppm, mg):
                             if ppm in ["", "-"] and mg in ["", "-"]: return "-"
                             res = []
-                            if ppm not in ["", "-"]: res.append(f"{ppm} ppm")
-                            if mg not in ["", "-"]: res.append(f"{mg} mg/㎥")
+                            if ppm not in ["", "-"]: 
+                                p = str(ppm).strip()
+                                if p.upper().startswith("C"):
+                                    res.append(f"C {p[1:].strip()} ppm")
+                                else:
+                                    res.append(f"{p} ppm")
+                            if mg not in ["", "-"]: 
+                                m = str(mg).strip()
+                                if m.upper().startswith("C"):
+                                    res.append(f"C {m[1:].strip()} mg/㎥")
+                                else:
+                                    res.append(f"{m} mg/㎥")
                             return " / ".join(res)
                             
                         twa_str = format_oel(twa_ppm, twa_mg)
@@ -620,87 +626,4 @@ with tab3:
                         if os.path.exists(file_path):
                             with open(file_path, "rb") as f: txt = extract_full_text_for_rag(f)
                         else: txt = "서버 백업 데이터 활용"
-                        if "텍스트 추출 불가" in txt: ans = "해당 문서는 스캔본이므로 RAG 답변이 제한됩니다."
-                        else:
-                            try:
-                                client = Client(host=api_url)
-                                res = client.chat(model='gemma4:e2b', messages=[{'role': 'user', 'content': f"MSDS 전문가로서 원문을 바탕으로 명확하게 답하세요.\n[원문]\n{txt[:8000]}\n[질문]\n{query}"}])
-                                ans = res['message']['content']
-                            except Exception as e: ans = f"🚨 AI 서버 연결 실패: {e}"
-                    st.markdown(ans)
-                    st.session_state.messages.append({"role": "assistant", "content": ans})
-        else: st.info("유효한 PDF 문서가 없습니다.")
-    else: st.info("👈 파일을 업로드해 주세요.")
-
-# ------------------------------------------
-# [Tab 4] 관리자 전용 대시보드
-# ------------------------------------------
-with tab4:
-    st.markdown("### 🔒 관리자 통합 통제 대시보드")
-    input_password = st.text_input("보안 자격증명 비밀번호 입력", type="password", key="admin_tab_pwd")
-    
-    if input_password == ADMIN_PASSWORD:
-        st.success("🔓 중앙 관리자 인증에 성공했습니다. (왼쪽 사이드바 메뉴 활성화됨)")
-        st.markdown("---")
-        
-        st.markdown("### ⚙️ 사용자 예외 규칙 관리 (Custom DB)")
-        st.caption("Coal Tar Pitch 처럼 법정 DB에 없지만 특별 관리해야 할 예외 CAS 번호를 등록하면 AI가 최우선으로 적용합니다.")
-        custom_db = load_custom_db()
-        with st.form("add_custom_rule"):
-            col1, col2, col3, col4 = st.columns(4)
-            with col1: new_cas = st.text_input("CAS 번호 (예: 65996-92-1)")
-            with col2: new_we = st.selectbox("작업환경 대상", ["O", "X"], index=1)
-            with col3: new_sh = st.selectbox("특수검진 대상", ["O", "X"], index=1)
-            with col4: new_pct = st.number_input("기준 함유량(%)", min_value=0.0, value=1.0)
-            
-            if st.form_submit_button("예외 물질 등록 / 수정"):
-                if new_cas:
-                    custom_db[new_cas] = {"WE": new_we, "SH": new_sh, "threshold": new_pct}
-                    save_custom_db(custom_db)
-                    st.success(f"✅ [{new_cas}] 규칙이 성공적으로 등록되었습니다!")
-                    time.sleep(1)
-                    st.rerun()
-                else: st.error("CAS 번호를 입력해주세요.")
-                    
-        if custom_db:
-            st.markdown("**현재 등록된 예외 규칙 목록**")
-            cdb_df = pd.DataFrame.from_dict(custom_db, orient="index").reset_index()
-            cdb_df.columns = ["CAS 번호", "작업환경(WE)", "특수검진(SH)", "기준함유량(%)"]
-            st.dataframe(cdb_df, use_container_width=True, hide_index=True)
-        else: st.info("아직 등록된 사내 예외 규칙이 없습니다.")
-
-        st.markdown("---")
-        st.markdown("### 📚 전사 누적 분석 빅데이터 기록")
-        if os.path.exists(HISTORY_STORAGE):
-            history_files = [f for f in os.listdir(HISTORY_STORAGE) if f.endswith('.csv')]
-            if history_files:
-                all_data = [pd.read_csv(os.path.join(HISTORY_STORAGE, f)) for f in history_files]
-                if all_data:
-                    merged_df = pd.concat(all_data, ignore_index=True).sort_values(by="분석일시", ascending=False) if "분석일시" in all_data[0].columns else pd.concat(all_data, ignore_index=True)
-                    st.dataframe(merged_df, use_container_width=True, hide_index=True)
-                    csv = merged_df.to_csv(index=False).encode('utf-8-sig')
-                    st.download_button("📥 전사 통합 마스터 데이터 Excel 다운로드", csv, "MSDS_전사마스터기록.csv", "text/csv")
-            else: st.info("아직 누적된 이력이 없습니다.")
-        else: st.info("저장소 레이어가 존재하지 않습니다.")
-    elif input_password: st.error("❌ 비밀번호가 불일치합니다.")
-    else: st.info("🔑 과거 기록 열람 및 예외 DB 등록을 위해 관리자 암호를 입력해 주십시오.")
-
-# ------------------------------------------
-# [Tab 5] 📬 문의 및 피드백
-# ------------------------------------------
-with tab5:
-    st.markdown("### 📬 시스템 문의 및 피드백")
-    st.caption("시스템 사용 중 발생한 오류나 건의사항을 남겨주시면 관리자 디스코드 채널로 실시간 전송됩니다.")
-    
-    with st.form("feedback_form"):
-        feedback_text = st.text_area("문의 내용 (자세히 적어주실수록 해결이 빠릅니다)", height=150, placeholder="예: Coal Tar Pitch 분석 시 제품명에 한글이 깨져서 나와요.")
-        submitted = st.form_submit_button("🚀 관리자에게 의견 전송하기")
-        
-        if submitted:
-            if feedback_text.strip() == "":
-                st.warning("내용을 입력해 주세요.")
-            else:
-                with st.spinner("의견을 전송하는 중입니다..."):
-                    success = send_feedback_to_discord(feedback_text, discord_webhook)
-                    if success: st.success("🎉 소중한 의견이 관리자 디스코드로 성공적으로 전송되었습니다! 감사합니다.")
-                    else: st.error("🚨 전송에 실패했습니다. 관리자 디스코드 웹훅 연결 상태를 확인해 주세요.")
+                        if "텍스트 추출 불가" in txt: ans =
