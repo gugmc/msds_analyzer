@@ -68,9 +68,11 @@ def decode_zip_filename(name):
             decoded = name
     return unicodedata.normalize('NFC', decoded)
 
+# 🌟 누적 분석 건수, 오늘 분석 건수, 비밀 코드 분석 건수 계산 함수
 def get_analysis_stats():
     total_count = 0
     today_count = 0
+    secret_count = 0
     today_str = get_seoul_time("%Y-%m-%d")
     
     if os.path.exists(HISTORY_STORAGE):
@@ -82,9 +84,12 @@ def get_analysis_stats():
                     if "분석일시" in df.columns:
                         today_df = df[df["분석일시"].astype(str).str.startswith(today_str)]
                         today_count += len(today_df)
+                    # 🌟 시크릿 모드로 분석된 기록 카운팅
+                    if "시크릿모드" in df.columns:
+                        secret_count += len(df[df["시크릿모드"] == "O"])
                 except:
                     pass
-    return 10000 + total_count, today_count
+    return 10000 + total_count, today_count, secret_count
 
 if "all_results" not in st.session_state: 
     st.session_state.all_results = None
@@ -377,7 +382,8 @@ col_title, col_total, col_today = st.columns([6, 2, 2])
 with col_title:
     st.title("🛡️ AI 산업안전보건 전문가 시스템")
 
-total_analyzed, today_analyzed = get_analysis_stats()
+# 🌟 통계 변수에 secret_analyzed 추가
+total_analyzed, today_analyzed, secret_analyzed = get_analysis_stats()
 
 with col_total:
     st.metric(label="📊 누적 분석 건수", value=f"{total_analyzed:,} 건")
@@ -388,15 +394,18 @@ st.markdown("---")
 
 st.sidebar.markdown("### 🔌 AI 서버 연결 설정")
 
-# 🌟 [단축어 적용] gil 입력 시 Ngrok 주소 자동 매핑
-raw_api_url = st.sidebar.text_input("Ollama API 주소 ('gil' 입력 가능)", value="http://localhost:11434")
+# 🌟 [보안 업데이트] 외부에는 평범한 입력창처럼 보이지만, 'gil' 입력 시 은밀하게 주소 맵핑
+raw_api_url = st.sidebar.text_input("Ollama API 주소 (Ngrok URL)", value="http://localhost:11434")
+
+is_secret_mode = False
 if raw_api_url.strip().lower() == "gil":
     api_url = "https://iguana-garter-ditch.ngrok-free.dev"
-    st.sidebar.success("🔗 [gil] 단축어 모드 활성화됨!")
+    is_secret_mode = True
+    # 🌟 화면에는 아무런 안내 메시지도 띄우지 않아 비밀을 유지합니다.
 else:
     api_url = raw_api_url
 
-st.sidebar.caption("※ 배포 환경에서는 전체 Ngrok 주소나 단축어 'gil'을 입력하세요.")
+st.sidebar.caption("※ 배포 환경에서는 생성된 Ngrok 주소를 전체 입력하세요.")
 st.sidebar.markdown("---")
 
 discord_webhook = ""
@@ -576,7 +585,8 @@ with tab1:
                             "TWA": twa_str,
                             "STEL/C": stel_str,
                             "작업환경": we_mark, "특수검진": sh_mark, "모델": track, "사유": reason,
-                            "노출기준비고": exposure_remark 
+                            "노출기준비고": exposure_remark,
+                            "시크릿모드": "O" if is_secret_mode else "X" # 🌟 DB 저장용 꼬리표
                         })
                 else:
                     st.error(f"❌ '{item['name']}' 정밀 성분 추출 실패.")
@@ -600,7 +610,9 @@ with tab1:
         if st.session_state.all_results:
             st.subheader("📊 통합 분석 결과 (요약표)")
             df = pd.DataFrame(st.session_state.all_results)
-            display_df = df.drop(columns=["분석일시"]) if "분석일시" in df.columns else df
+            # 관리자가 아닌 일반 사용자 화면에서는 시크릿모드 열을 숨깁니다
+            display_cols = [c for c in df.columns if c not in ["분석일시", "시크릿모드"]]
+            display_df = df[display_cols]
             st.dataframe(display_df.style.map(color_ox, subset=['작업환경', '특수검진']), use_container_width=True, hide_index=True)
             
             csv = df.to_csv(index=False).encode('utf-8-sig')
@@ -698,6 +710,12 @@ with tab4:
     
     if input_password == ADMIN_PASSWORD:
         st.success("🔓 중앙 관리자 인증에 성공했습니다. (왼쪽 사이드바 메뉴 활성화됨)")
+        st.markdown("---")
+
+        # 🌟 [신규] 관리자만 볼 수 있는 비밀 코드 이용자 통계 
+        st.markdown(f"### 🕵️ 시크릿 코드('gil') 분석 통계")
+        st.info(f"**누적 'gil' 코드 분석 건수:** `{secret_analyzed:,} 건`")
+        st.caption("비밀 코드를 아는 특별 사용자들이 시스템을 이용해 분석을 돌린 횟수입니다.")
         st.markdown("---")
         
         st.markdown("### ⚙️ 사용자 예외 규칙 관리 (Custom DB)")
