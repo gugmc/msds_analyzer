@@ -43,23 +43,29 @@ os.makedirs(HISTORY_STORAGE, exist_ok=True)
 os.makedirs(FONT_STORAGE, exist_ok=True)
 
 if not os.path.exists(CUSTOM_DB_PATH):
-    with open(CUSTOM_DB_PATH, "w", encoding="utf-8") as f: json.dump({}, f)
+    with open(CUSTOM_DB_PATH, "w", encoding="utf-8") as f: 
+        json.dump({}, f)
 
 def load_custom_db():
-    with open(CUSTOM_DB_PATH, "r", encoding="utf-8") as f: return json.load(f)
+    with open(CUSTOM_DB_PATH, "r", encoding="utf-8") as f: 
+        return json.load(f)
 
 def save_custom_db(data):
-    with open(CUSTOM_DB_PATH, "w", encoding="utf-8") as f: json.dump(data, f, ensure_ascii=False, indent=4)
+    with open(CUSTOM_DB_PATH, "w", encoding="utf-8") as f: 
+        json.dump(data, f, ensure_ascii=False, indent=4)
 
 def get_seoul_time(format_str="%Y-%m-%d %H:%M:%S"):
     seoul_tz = pytz.timezone("Asia/Seoul")
     return datetime.now(seoul_tz).strftime(format_str)
 
 def decode_zip_filename(name):
-    try: decoded = name.encode('cp437').decode('cp949')
+    try: 
+        decoded = name.encode('cp437').decode('cp949')
     except:
-        try: decoded = name.encode('cp437').decode('utf-8')
-        except: decoded = name
+        try: 
+            decoded = name.encode('cp437').decode('utf-8')
+        except: 
+            decoded = name
     return unicodedata.normalize('NFC', decoded)
 
 # 🌟 누적 분석 건수 및 오늘 분석 건수 계산 함수
@@ -81,9 +87,12 @@ def get_analysis_stats():
                     pass
     return 10000 + total_count, today_count
 
-if "all_results" not in st.session_state: st.session_state.all_results = None
-if "messages" not in st.session_state: st.session_state.messages = []
-if "discord_webhook_url" not in st.session_state: st.session_state.discord_webhook_url = DEFAULT_DISCORD_WEBHOOK
+if "all_results" not in st.session_state: 
+    st.session_state.all_results = None
+if "messages" not in st.session_state: 
+    st.session_state.messages = []
+if "discord_webhook_url" not in st.session_state: 
+    st.session_state.discord_webhook_url = DEFAULT_DISCORD_WEBHOOK
 
 @st.cache_data(show_spinner=False)
 def download_korean_font():
@@ -93,8 +102,10 @@ def download_korean_font():
         try:
             res = requests.get(font_url)
             res.raise_for_status()
-            with open(font_path, "wb") as f: f.write(res.content)
-        except Exception as e: return None
+            with open(font_path, "wb") as f: 
+                f.write(res.content)
+        except Exception as e: 
+            return None
     return font_path
 
 def generate_pdf_report(item, count=1):
@@ -104,7 +115,8 @@ def generate_pdf_report(item, count=1):
         try:
             pdfmetrics.registerFont(TTFont('NanumGothic', font_path))
             font_name = 'NanumGothic'
-        except: pass
+        except: 
+            pass
 
     buffer = BytesIO()
     p = canvas.Canvas(buffer, pagesize=A4)
@@ -222,11 +234,13 @@ def generate_pdf_report(item, count=1):
 
 def save_file_locally(file_name, file_bytes):
     file_path = os.path.join(PDF_STORAGE, file_name)
-    with open(file_path, "wb") as f: f.write(file_bytes)
+    with open(file_path, "wb") as f: 
+        f.write(file_bytes)
     return file_path
 
 def send_to_discord(results_list, webhook_url):
-    if not webhook_url or "api/webhooks" not in webhook_url: return False
+    if not webhook_url or "api/webhooks" not in webhook_url: 
+        return False
     try:
         for item in results_list:
             mi, ma = item.get('최소(%)', '0'), item.get('최대(%)', '0')
@@ -244,10 +258,12 @@ def send_to_discord(results_list, webhook_url):
 ----------------------------------------"""
             requests.post(webhook_url, json={"content": msg})
         return True
-    except: return False
+    except: 
+        return False
 
 def send_feedback_to_discord(feedback_text, webhook_url):
-    if not webhook_url: return False
+    if not webhook_url: 
+        return False
     msg = f"""📩 **[새로운 사용자 피드백 접수]**
 **⏱️ 접수일시:** {get_seoul_time()}
 **💬 문의 내용:** {feedback_text}
@@ -255,7 +271,8 @@ def send_feedback_to_discord(feedback_text, webhook_url):
     try:
         requests.post(webhook_url, json={"content": msg})
         return True
-    except: return False
+    except: 
+        return False
 
 def check_pdf_type_stream(file_obj):
     text_content = ""
@@ -263,8 +280,10 @@ def check_pdf_type_stream(file_obj):
         with pdfplumber.open(file_obj) as pdf:
             for page in pdf.pages[:3]:
                 text = page.extract_text()
-                if text: text_content += text
-    except Exception: pass
+                if text: 
+                    text_content += text
+    except Exception: 
+        pass
     file_obj.seek(0) 
     return "TEXT_BASED" if len(text_content.strip()) > 50 else "IMAGE_BASED"
 
@@ -273,11 +292,13 @@ def get_pdf_content(file_path):
     with pdfplumber.open(file_path) as pdf:
         for page in pdf.pages[:4]:
             t = page.extract_text()
-            if t: full_text += t + "\n"
+            if t: 
+                full_text += t + "\n"
             tables = page.extract_tables()
             for table in tables:
                 for row in table:
-                    if not row or all(cell is None or str(cell).strip() == '' for cell in row): continue
+                    if not row or all(cell is None or str(cell).strip() == '' for cell in row): 
+                        continue
                     extracted_tables.append([str(cell).replace('\n', ' ').strip() if cell else "" for cell in row])
     
     sec3_p = re.compile(r"(?:제\s*3\s*항|3\s*\.)\s*(?:구\s*성\s*성\s*분|화\s*학\s*물\s*질|조\s*성|명\s*칭|Composition)", re.IGNORECASE)
@@ -285,8 +306,10 @@ def get_pdf_content(file_path):
     s_m, e_m = sec3_p.search(full_text.replace(" ", "")), sec4_p.search(full_text.replace(" ", ""))
     
     isolated = ""
-    if s_m and e_m and s_m.start() < e_m.start(): isolated = full_text[s_m.start():e_m.start()]
-    elif s_m: isolated = full_text[s_m.start():s_m.start()+2000]
+    if s_m and e_m and s_m.start() < e_m.start(): 
+        isolated = full_text[s_m.start():e_m.start()]
+    elif s_m: 
+        isolated = full_text[s_m.start():s_m.start()+2000]
     return isolated, extracted_tables
 
 def extract_info_with_ai(prompt_content, target_model, api_url, is_image=False, image_paths=None):
@@ -304,14 +327,16 @@ def extract_info_with_ai(prompt_content, target_model, api_url, is_image=False, 
         response = client.chat(model=target_model, messages=messages)
         raw_output = response['message']['content']
         match = re.search(r'\[.*\]', raw_output, re.DOTALL)
-        if match: return json.loads(match.group(0)), {}
+        if match: 
+            return json.loads(match.group(0)), {}
         return [], {}
     except Exception as e: 
         st.error(f"🚨 AI 서버 연결 오류: {e}")
         return [], {}
 
 def get_min_max_content(content_str):
-    if not isinstance(content_str, str): content_str = str(content_str)
+    if not isinstance(content_str, str): 
+        content_str = str(content_str)
     nums = re.findall(r"[-+]?\d*\.\d+|\d+", content_str)
     if nums:
         floats = [float(n) for n in nums]
@@ -322,11 +347,14 @@ def format_val(val):
     try:
         f_val = float(val)
         return f"{int(f_val)}" if f_val.is_integer() else f"{f_val:.1f}"
-    except: return "0"
+    except: 
+        return "0"
 
 def color_ox(val):
-    if str(val).upper() == 'O': return 'color: #e74c3c; font-weight: bold;'
-    elif str(val).upper() == 'X': return 'color: #2ecc71; font-weight: bold;'
+    if str(val).upper() == 'O': 
+        return 'color: #e74c3c; font-weight: bold;'
+    elif str(val).upper() == 'X': 
+        return 'color: #2ecc71; font-weight: bold;'
     return ''
 
 def extract_full_text_for_rag(file_obj):
@@ -335,8 +363,10 @@ def extract_full_text_for_rag(file_obj):
         with pdfplumber.open(file_obj) as pdf:
             for page in pdf.pages:
                 t = page.extract_text()
-                if t: full_text += t + "\n"
-    except: full_text = "텍스트 추출 불가 스캔본"
+                if t: 
+                    full_text += t + "\n"
+    except: 
+        full_text = "텍스트 추출 불가 스캔본"
     file_obj.seek(0)
     return full_text
 
@@ -447,7 +477,8 @@ with tab1:
                             img.save(p, 'JPEG'); img_paths.append(p)
                         ext_json, _ = extract_info_with_ai(None, target, api_url=api_url, is_image=True, image_paths=img_paths)
                         for p in img_paths: os.remove(p)
-                    except: pass
+                    except: 
+                        pass
 
                 if ext_json:
                     for element in ext_json:
@@ -460,9 +491,11 @@ with tab1:
                             cas = f"{cas_clean[:-3]}-{cas_clean[-3:-1]}-{cas_clean[-1]}"
                         else:
                             cas_match = re.search(r'\d+-\d+-\d+', cas)
-                            if cas_match: cas = cas_match.group(0) 
+                            if cas_match: 
+                                cas = cas_match.group(0) 
                         
-                        if len(name) < 2 and cas == "미상": continue
+                        if len(name) < 2 and cas == "미상": 
+                            continue
                         
                         manage_status = "해당 없음 (일반 물질)"
                         if cas in MANAGED_SUBSTANCES_DB:
@@ -475,9 +508,9 @@ with tab1:
                         stel_ppm = str(exposure_data.get("STEL(ppm)", "")).strip()
                         stel_mg = str(exposure_data.get("STEL(mg/m3)", "")).strip()
                         
-                        # 🌟 [신규/개선] C (최고노출기준) 문자가 있으면 무조건 띄어쓰기하여 명확하게 포맷팅
                         def format_oel(ppm, mg):
-                            if ppm in ["", "-"] and mg in ["", "-"]: return "-"
+                            if ppm in ["", "-"] and mg in ["", "-"]: 
+                                return "-"
                             res = []
                             if ppm not in ["", "-"]: 
                                 p = str(ppm).strip()
@@ -498,7 +531,8 @@ with tab1:
 
                         exposure_remark = exposure_data.get("비고", "-")
                         exposure_remark = re.sub(r'\[[\d\-]+\]\s*', '', exposure_remark).strip()
-                        if not exposure_remark: exposure_remark = "-"
+                        if not exposure_remark: 
+                            exposure_remark = "-"
                         
                         we_mark, sh_mark, reason = "X", "X", "DB 미등록"
                         matched_db_info = None
@@ -611,19 +645,124 @@ with tab3:
                     for name in z.namelist():
                         if name.lower().endswith(".pdf") and not name.startswith("__MACOSX"):
                             document_names.append(os.path.basename(decode_zip_filename(name)))
-            else: document_names.append(unicodedata.normalize('NFC', f.name))
+            else: 
+                document_names.append(unicodedata.normalize('NFC', f.name))
                 
         if document_names:
             sel_file = st.selectbox("질문할 문서 선택", document_names)
             for m in st.session_state.messages:
-                with st.chat_message(m["role"]): st.markdown(m["content"])
+                with st.chat_message(m["role"]): 
+                    st.markdown(m["content"])
             if query := st.chat_input(f"'{sel_file}'에 대해 물어보세요."):
                 st.session_state.messages.append({"role": "user", "content": query})
-                with st.chat_message("user"): st.markdown(query)
+                with st.chat_message("user"): 
+                    st.markdown(query)
                 with st.chat_message("assistant"):
                     with st.spinner("전문 검토 의견 작성 중..."):
                         file_path = os.path.join(PDF_STORAGE, sel_file)
                         if os.path.exists(file_path):
-                            with open(file_path, "rb") as f: txt = extract_full_text_for_rag(f)
-                        else: txt = "서버 백업 데이터 활용"
-                        if "텍스트 추출 불가" in txt: ans =
+                            with open(file_path, "rb") as f: 
+                                txt = extract_full_text_for_rag(f)
+                        else: 
+                            txt = "서버 백업 데이터 활용"
+                        
+                        if "텍스트 추출 불가" in txt: 
+                            ans = "해당 문서는 스캔본이므로 RAG 답변이 제한됩니다."
+                        else:
+                            try:
+                                client = Client(host=api_url)
+                                res = client.chat(model='gemma4:e2b', messages=[{'role': 'user', 'content': f"MSDS 전문가로서 원문을 바탕으로 명확하게 답하세요.\n[원문]\n{txt[:8000]}\n[질문]\n{query}"}])
+                                ans = res['message']['content']
+                            except Exception as e: 
+                                ans = f"🚨 AI 서버 연결 실패: {e}"
+                    st.markdown(ans)
+                    st.session_state.messages.append({"role": "assistant", "content": ans})
+        else: 
+            st.info("유효한 PDF 문서가 없습니다.")
+    else: 
+        st.info("👈 파일을 업로드해 주세요.")
+
+# ------------------------------------------
+# [Tab 4] 관리자 전용 대시보드
+# ------------------------------------------
+with tab4:
+    st.markdown("### 🔒 관리자 통합 통제 대시보드")
+    input_password = st.text_input("보안 자격증명 비밀번호 입력", type="password", key="admin_tab_pwd")
+    
+    if input_password == ADMIN_PASSWORD:
+        st.success("🔓 중앙 관리자 인증에 성공했습니다. (왼쪽 사이드바 메뉴 활성화됨)")
+        st.markdown("---")
+        
+        st.markdown("### ⚙️ 사용자 예외 규칙 관리 (Custom DB)")
+        st.caption("Coal Tar Pitch 처럼 법정 DB에 없지만 특별 관리해야 할 예외 CAS 번호를 등록하면 AI가 최우선으로 적용합니다.")
+        custom_db = load_custom_db()
+        with st.form("add_custom_rule"):
+            col1, col2, col3, col4 = st.columns(4)
+            with col1: 
+                new_cas = st.text_input("CAS 번호 (예: 65996-92-1)")
+            with col2: 
+                new_we = st.selectbox("작업환경 대상", ["O", "X"], index=1)
+            with col3: 
+                new_sh = st.selectbox("특수검진 대상", ["O", "X"], index=1)
+            with col4: 
+                new_pct = st.number_input("기준 함유량(%)", min_value=0.0, value=1.0)
+            
+            if st.form_submit_button("예외 물질 등록 / 수정"):
+                if new_cas:
+                    custom_db[new_cas] = {"WE": new_we, "SH": new_sh, "threshold": new_pct}
+                    save_custom_db(custom_db)
+                    st.success(f"✅ [{new_cas}] 규칙이 성공적으로 등록되었습니다!")
+                    time.sleep(1)
+                    st.rerun()
+                else: 
+                    st.error("CAS 번호를 입력해주세요.")
+                    
+        if custom_db:
+            st.markdown("**현재 등록된 예외 규칙 목록**")
+            cdb_df = pd.DataFrame.from_dict(custom_db, orient="index").reset_index()
+            cdb_df.columns = ["CAS 번호", "작업환경(WE)", "특수검진(SH)", "기준함유량(%)"]
+            st.dataframe(cdb_df, use_container_width=True, hide_index=True)
+        else: 
+            st.info("아직 등록된 사내 예외 규칙이 없습니다.")
+
+        st.markdown("---")
+        st.markdown("### 📚 전사 누적 분석 빅데이터 기록")
+        if os.path.exists(HISTORY_STORAGE):
+            history_files = [f for f in os.listdir(HISTORY_STORAGE) if f.endswith('.csv')]
+            if history_files:
+                all_data = [pd.read_csv(os.path.join(HISTORY_STORAGE, f)) for f in history_files]
+                if all_data:
+                    merged_df = pd.concat(all_data, ignore_index=True).sort_values(by="분석일시", ascending=False) if "분석일시" in all_data[0].columns else pd.concat(all_data, ignore_index=True)
+                    st.dataframe(merged_df, use_container_width=True, hide_index=True)
+                    csv = merged_df.to_csv(index=False).encode('utf-8-sig')
+                    st.download_button("📥 전사 통합 마스터 데이터 Excel 다운로드", csv, "MSDS_전사마스터기록.csv", "text/csv")
+            else: 
+                st.info("아직 누적된 이력이 없습니다.")
+        else: 
+            st.info("저장소 레이어가 존재하지 않습니다.")
+    elif input_password: 
+        st.error("❌ 비밀번호가 불일치합니다.")
+    else: 
+        st.info("🔑 과거 기록 열람 및 예외 DB 등록을 위해 관리자 암호를 입력해 주십시오.")
+
+# ------------------------------------------
+# [Tab 5] 📬 문의 및 피드백
+# ------------------------------------------
+with tab5:
+    st.markdown("### 📬 시스템 문의 및 피드백")
+    st.caption("시스템 사용 중 발생한 오류나 건의사항을 남겨주시면 관리자 디스코드 채널로 실시간 전송됩니다.")
+    
+    with st.form("feedback_form"):
+        feedback_text = st.text_area("문의 내용 (자세히 적어주실수록 해결이 빠릅니다)", height=150, placeholder="예: Coal Tar Pitch 분석 시 제품명에 한글이 깨져서 나와요.")
+        submitted = st.form_submit_button("🚀 관리자에게 의견 전송하기")
+        
+        if submitted:
+            if feedback_text.strip() == "":
+                st.warning("내용을 입력해 주세요.")
+            else:
+                with st.spinner("의견을 전송하는 중입니다..."):
+                    success = send_feedback_to_discord(feedback_text, discord_webhook)
+                    if success: 
+                        st.success("🎉 소중한 의견이 관리자 디스코드로 성공적으로 전송되었습니다! 감사합니다.")
+                    else: 
+                        st.error("🚨 전송에 실패했습니다. 관리자 디스코드 웹훅 연결 상태를 확인해 주세요.")
