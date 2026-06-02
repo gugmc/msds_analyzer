@@ -17,7 +17,6 @@ import requests
 
 # 🌟 영구 보존용 법정 DB (취급규제 및 노출기준 비고) 로드
 from managed_db import MANAGED_SUBSTANCES_DB
-# 🌟 [변경] 새로 만든 exposure_oel.py 를 불러옵니다!
 from exposure_oel import EXPOSURE_LIMITS_DB
 
 from reportlab.lib.pagesizes import A4
@@ -252,8 +251,7 @@ def get_pdf_content(file_path):
     with pdfplumber.open(file_path) as pdf:
         for page in pdf.pages[:4]:
             t = page.extract_text()
-            if t: full_text += t + "
-"
+            if t: full_text += t + "\n"
             tables = page.extract_tables()
             for table in tables:
                 for row in table:
@@ -315,8 +313,7 @@ def extract_full_text_for_rag(file_obj):
         with pdfplumber.open(file_obj) as pdf:
             for page in pdf.pages:
                 t = page.extract_text()
-                if t: full_text += t + "
-"
+                if t: full_text += t + "\n"
     except: full_text = "텍스트 추출 불가 스캔본"
     file_obj.seek(0)
     return full_text
@@ -437,7 +434,7 @@ with tab1:
                         if cas in MANAGED_SUBSTANCES_DB:
                             manage_status = MANAGED_SUBSTANCES_DB[cas]["type"]
                             
-                        # 🌟 [핵심 변경] exposure_oel.py (.py 파일)에서 직접 데이터 가져오기!
+                        # 🌟 exposure_oel.py 데이터베이스에서 가져오기
                         exposure_data = EXPOSURE_LIMITS_DB.get(cas, {})
                         exposure_remark = exposure_data.get("비고", "-")
                         exposure_remark = re.sub(r'\[[\d\-]+\]\s*', '', exposure_remark).strip()
@@ -523,8 +520,8 @@ with tab2:
             with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
                 for idx, item in enumerate(st.session_state.all_results):
                     pdf_buffer = generate_pdf_report(item, count=idx+1)
-                    safe_prod = item.get("제품명", f"미상_{idx}").replace("/", "_").replace("\", "_")
-                    safe_mat = item.get("물질명", "미상").replace("/", "_").replace("\", "_")
+                    safe_prod = item.get("제품명", f"미상_{idx}").replace("/", "_").replace("\\", "_")
+                    safe_mat = item.get("물질명", "미상").replace("/", "_").replace("\\", "_")
                     zip_file.writestr(f"확인서_{safe_prod}_{safe_mat}.pdf", pdf_buffer.getvalue())
             st.download_button("📥 모든 확인서 한 번에 다운로드 (ZIP)", data=zip_buffer.getvalue(), file_name=f"MSDS_전체확인서_{get_seoul_time('%m%d%H%M')}.zip", mime="application/zip", type="primary")
             
@@ -571,7 +568,6 @@ with tab3:
                         else:
                             try:
                                 client = Client(host=api_url)
-                                # 🌟 향후 RAG가 exposure_oel의 상세 정보를 참조할 수 있도록 설계
                                 res = client.chat(model='gemma4:e2b', messages=[{'role': 'user', 'content': f"MSDS 전문가로서 원문을 바탕으로 명확하게 답하세요.\n[원문]\n{txt[:8000]}\n[질문]\n{query}"}])
                                 ans = res['message']['content']
                             except Exception as e: ans = f"🚨 AI 서버 연결 실패: {e}"
